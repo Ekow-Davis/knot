@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dev-dist/
+__pycache__/
+*.pyc
+.venv/
+.env
+.env.local
+*.local
+.DS_Store
+# Question packs: never commit, never open. Encrypted or not.
+packs/
+*.pack

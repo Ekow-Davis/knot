@@ -1,0 +1,88 @@
+/* Base styles. Colours come from CSS variables set by lib/theme.ts — never hard-code a colour. */
+
+:root {
+  /* Plum night defaults, so the first paint matches before JS runs. */
+  --bg: oklch(0.2 0.045 340);
+  --bg2: oklch(0.145 0.035 340);
+  --surface: oklch(0.26 0.045 340);
+  --surface2: oklch(0.31 0.045 340);
+  --ink: oklch(0.95 0.012 80);
+  --muted: oklch(0.77 0.03 340);
+  --line: oklch(0.41 0.045 340);
+  --accent: oklch(0.79 0.11 38);
+  --accent2: oklch(0.62 0.1 38);
+  --accentInk: oklch(0.8 0.11 38);
+  --onAccent: oklch(0.2 0.04 340);
+  --glow: oklch(0.79 0.11 38 / 0.32);
+  --warn: oklch(0.75 0.13 25);
+  --m: 1; /* motion multiplier: Deep slows everything down */
+
+  --serif: 'Cormorant Garamond', Georgia, serif;
+  --sans: Manrope, system-ui, -apple-system, sans-serif;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  color-scheme: dark;
+}
+
+:root[data-mode='candle'] {
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font: 500 16px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  /* Stop iOS rubber-banding the whole app shell. */
+  overscroll-behavior: none;
+}
+
+#app {
+  min-height: 100dvh;
+  padding: var(--safe-top) 0 var(--safe-bottom);
+  transition: background calc(0.4s * var(--m)) ease;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  min-height: 44px; /* tap target */
+  cursor: pointer;
+}
+
+input {
+  font: inherit;
+  /* 16px+ stops iOS zooming into inputs on focus. */
+  font-size: max(16px, 1em);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.serif {
+  font-family: var(--serif);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.15s !important;
+  }
+}
