@@ -21,6 +21,9 @@ from .db import SessionLocal
 from .models import PushSubscription
 
 log = logging.getLogger("knot.push")
+# Shown in the API's console next to the request log, so you can see whether a notification
+# went out and what Apple/Google said about it.
+say = logging.getLogger("uvicorn.error")
 
 
 def configured() -> bool:
@@ -44,7 +47,10 @@ def _send_one(sub: PushSubscription, payload: dict) -> int:
         )
         return r.status_code
     except WebPushException as e:
-        return e.response.status_code if e.response is not None else 0
+        code = e.response.status_code if e.response is not None else 0
+        detail = (e.response.text[:200] if e.response is not None else str(e)).strip()
+        say.warning("push: %s refused it (%s): %s", sub.endpoint.split("/")[2], code, detail)
+        return code
     except Exception:  # network trouble: try again next time
         log.exception("push send failed")
         return 0
@@ -53,10 +59,13 @@ def _send_one(sub: PushSubscription, payload: dict) -> int:
 async def notify(user_id: uuid.UUID | None, title: str, body: str, *, tag: str, url: str = "/") -> int:
     """Send to every phone this person has allowed notifications on. Returns how many accepted."""
     if not user_id or not configured():
+        if user_id:
+            say.info("push: not sent (VAPID keys aren't set)")
         return 0
     async with SessionLocal() as db:
         subs = (await db.execute(select(PushSubscription).where(PushSubscription.user_id == user_id))).scalars().all()
     if not subs:
+        say.info("push: not sent (they haven't allowed notifications on any device yet)")
         return 0
 
     payload = {"title": title, "body": body, "tag": tag, "url": url}
@@ -68,7 +77,9 @@ async def notify(user_id: uuid.UUID | None, title: str, body: str, *, tag: str, 
         async with SessionLocal() as db:
             await db.execute(delete(PushSubscription).where(PushSubscription.endpoint.in_(gone)))
             await db.commit()
-    return sum(1 for c in statuses if 200 <= c < 300)
+    ok = sum(1 for c in statuses if 200 <= c < 300)
+    say.info("push: \"%s %s\" delivered to %d of %d device(s)", title, body, ok, len(subs))
+    return ok
 
 
 def notify_later(user_id, title: str, body: str, *, tag: str, url: str = "/") -> None:

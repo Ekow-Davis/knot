@@ -70,7 +70,8 @@ export const useRound = defineStore('round', () => {
 
   // "Twelve knots tied." — counted on this phone, for tonight only.
   const tonight = ref(readTonight())
-  let lastCounted: string | null = null
+  /** Rounds already read on this phone, so a later reveal (their pull) doesn't pop up again. */
+  const readHere = new Set<string>()
 
   const phase = computed<'none' | 'answer' | 'waiting' | 'reveal' | 'passed' | 'empty' | 'expired' | 'between'>(() => {
     if (reveal.value) return 'reveal'
@@ -136,6 +137,7 @@ export const useRound = defineStore('round', () => {
       if (code === 'empty') empty.value = true
       else if (code === 'round_open') await loadCurrent()
       else if (code === 'use_ready') return ready(true)
+      else if (code === 'plenty') toast(`That’s plenty waiting for ${auth.partnerName}.`)
       else if (code === 'bank_key_missing') toast('The question bank isn’t set up on the server yet.')
       else toast('Couldn’t draw one. Try again.')
       return code === 'empty' || code === 'round_open'
@@ -285,8 +287,8 @@ export const useRound = defineStore('round', () => {
     }
     round.value = null
     if (out.turn_user_id) home.turnUserId = out.turn_user_id
-    if (lastCounted !== roundId) {
-      lastCounted = roundId
+    if (!readHere.has(roundId)) {
+      readHere.add(roundId)
       tonight.value++
       try {
         sessionStorage.setItem(TONIGHT_KEY, String(tonight.value))
@@ -334,8 +336,10 @@ export const useRound = defineStore('round', () => {
     switch (msg.type) {
       case 'round.drawn':
         home.clearReady()
-        clearOutcome()
+        // Fetch the new card *before* clearing the old screen. Clearing first left a moment with
+        // nothing on the table, and the Play screen took that as "go home".
         await loadCurrent()
+        clearOutcome()
         break
       case 'round.empty':
         home.clearReady()
@@ -360,8 +364,12 @@ export const useRound = defineStore('round', () => {
         break
       case 'round.revealed': {
         const out = msg as unknown as PullOut & { round_id: string }
-        // Already read on this phone (e.g. you read it alone earlier, and they've now pulled theirs).
-        if (out.round_id === lastCounted) break
+        // Already read on this phone (you read it alone earlier, and they've now pulled theirs):
+        // just make sure it isn't still sitting here half-pulled.
+        if (readHere.has(out.round_id)) {
+          if (round.value?.id === out.round_id) accept(null)
+          break
+        }
         await showReveal(out.round_id, out, round.value)
         break
       }

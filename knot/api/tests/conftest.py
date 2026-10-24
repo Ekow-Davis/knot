@@ -15,6 +15,9 @@ os.environ["ENV"] = "test"
 os.environ["SECRET_KEY"] = "test-secret-key-that-is-long-enough-1234567890"
 os.environ["OWNER_EMAIL"] = "baron@example.com"
 os.environ["RESEND_API_KEY"] = ""
+# Your real push keys live in .env; tests start with push switched off and turn it on themselves.
+os.environ["VAPID_PUBLIC_KEY"] = ""
+os.environ["VAPID_PRIVATE_KEY"] = ""
 os.environ["BANK_KEY"] = "dGVzdC1iYW5rLWtleS0zMi1ieXRlcy1sb25nISEhISE="  # 32 bytes, tests only
 
 from collections import defaultdict  # noqa: E402

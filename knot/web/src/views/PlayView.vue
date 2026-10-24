@@ -106,7 +106,9 @@ const waitSub = computed(() => {
     return 'Your answer is knotted up tight. Nobody can peek, not even us.'
   }
   if (!home.partnerOnline && !game.partnerPulled)
-    return `${P.value} isn’t here right now. Pull your end to read it; they’ll see it when they’re back.`
+    return game.iPulled
+      ? `${P.value} left before pulling. Read it now; they’ll pull theirs when they’re back.`
+      : `${P.value} isn’t here right now. Pull your end to read it; they’ll see it when they’re back.`
   if (game.partnerReadAlone && !game.iPulled) return `${P.value} already read it. Pull your end whenever you’re ready.`
   if (game.iPulled && !game.partnerPulled) return `Hold on, ${P.value} is pulling too.`
   if (game.partnerPulled && !game.iPulled) return `${P.value} is holding their end. Press and hold yours.`
@@ -123,6 +125,7 @@ watch(
     offerAlone.value = false
     if (waitingOnThem) aloneTimer = setTimeout(() => (offerAlone.value = true), 15000)
   },
+  { immediate: true }, // also when you come back to a card you'd already pulled
 )
 onBeforeUnmount(() => clearTimeout(aloneTimer))
 
@@ -352,11 +355,16 @@ function close() {
         </div>
         <p class="wait-sub">{{ waitSub }}</p>
       </div>
-      <button v-if="!ready" class="btn ghost" type="button" @click="game.tug()">Give {{ P }} a little tug</button>
+      <template v-if="!ready">
+        <button class="btn ghost" type="button" @click="game.tug()">Give {{ P }} a little tug</button>
+        <button v-if="away && iWrite" class="btn link" type="button" :disabled="game.busy" @click="game.draw()">
+          Leave {{ P }} another one
+        </button>
+      </template>
       <button v-else-if="!game.iPulled" class="btn ghost" type="button" @click="game.pull()">
         Can't hold? Tap to pull your end
       </button>
-      <button v-else-if="offerAlone" class="btn ghost" type="button" @click="game.pull(true)">
+      <button v-else-if="offerAlone || away" class="btn" type="button" @click="game.pull(true)">
         Read it now. {{ P }} still gets to pull theirs.
       </button>
     </section>

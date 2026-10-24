@@ -282,3 +282,40 @@ async def test_both_ready_on_an_empty_hat(make_client, outbox, bank, monkeypatch
     await me.post("/api/rounds/ready", json={"ready": True})
     r = (await her.post("/api/rounds/ready", json={"ready": True})).json()
     assert r["drawn"] is False and r["empty"] is True
+
+
+# ── Leaving several sealed questions for someone who's away ───────────────────
+
+
+async def test_sealed_questions_queue_up_for_her(make_client, outbox, bank):
+    me, her = await paired(make_client, outbox)  # her phone isn't connected: she's away
+    await mix(me, "sweet", "deep")
+    first = (await me.post("/api/rounds")).json()
+    assert error_code(await me.post("/api/rounds")) == "round_open"  # answer the one in front of you first
+    await me.post(f"/api/rounds/{first['id']}/seal", json=sealed())
+
+    await mix(me, "future", "deep")
+    second = await me.post("/api/rounds")
+    assert second.status_code == 200  # a second one, left for her too
+    # Her phone opens the oldest first; mine shows the newest I'm waiting on.
+    assert (await her.get("/api/rounds/current")).json()["round"]["id"] == first["id"]
+    assert (await me.get("/api/rounds/current")).json()["round"]["id"] == second.json()["id"]
+
+
+async def test_reading_alone_lets_you_carry_on(make_client, outbox, bank):
+    me, her = await paired(make_client, outbox)
+    await mix(me, "sweet", "deep")
+    rid = (await me.post("/api/rounds")).json()["id"]
+    await me.post(f"/api/rounds/{rid}/seal", json=sealed())
+    await her.post(f"/api/rounds/{rid}/seal", json=sealed())
+
+    out = (await me.post(f"/api/rounds/{rid}/pull", json={"alone": False})).json()
+    assert out["revealed"] is True  # she's away, so I read it now
+    assert (await me.get("/api/rounds/current")).json()["round"] is None  # off my phone…
+    assert (await her.get("/api/rounds/current")).json()["round"]["id"] == rid  # …still waiting on hers
+
+    await mix(me, "future", "deep")
+    assert (await me.post("/api/rounds")).status_code == 200  # I can leave her another
+
+    assert (await her.post(f"/api/rounds/{rid}/pull", json={"alone": False})).json()["revealed"] is True
+    assert await count(f"SELECT count(*) FROM rounds WHERE id = '{rid}'") == 0  # both read: gone

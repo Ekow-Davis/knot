@@ -43,6 +43,30 @@ function keyBytes(base64url: string): Uint8Array {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0))
 }
 
+function sameKey(sub: PushSubscription, key: Uint8Array): boolean {
+  const have = sub.options?.applicationServerKey
+  if (!have) return true // browser doesn't say: assume fine
+  const a = new Uint8Array(have)
+  return a.length === key.length && a.every((v, i) => v === key[i])
+}
+
+/**
+ * Subscribe this browser to the server's key. A subscription left over from an older key
+ * (e.g. before you generated your VAPID keys) can't receive anything, so it's replaced.
+ */
+async function subscribeWith(reg: ServiceWorkerRegistration): Promise<PushSubscription> {
+  const { key } = await api.get<{ key: string }>('/push/key')
+  const bytes = keyBytes(key)
+  let sub = await reg.pushManager.getSubscription()
+  if (sub && !sameKey(sub, bytes)) {
+    await sub.unsubscribe().catch(() => {})
+    sub = null
+  }
+  sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes })
+  await api.post('/push/subscribe', sub.toJSON())
+  return sub
+}
+
 /** Must be called from a tap (iOS requires a user gesture for the permission prompt). */
 export async function enablePush(): Promise<PushState> {
   if (!installedOnIOS()) return 'needs-install'
@@ -52,12 +76,23 @@ export async function enablePush(): Promise<PushState> {
 
   const reg = await registration()
   if (!reg) return 'unsupported'
-  const { key } = await api.get<{ key: string }>('/push/key')
-  const sub =
-    (await reg.pushManager.getSubscription()) ??
-    (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }))
-  await api.post('/push/subscribe', sub.toJSON())
+  await subscribeWith(reg)
   return 'on'
+}
+
+/**
+ * Permission already granted (e.g. allowed in the browser's own settings) but this device never
+ * signed up with the server: do that quietly, no prompt needed. Safe to call on every launch.
+ */
+export async function syncPush(): Promise<void> {
+  try {
+    if (!installedOnIOS() || !pushSupported() || Notification.permission !== 'granted') return
+    const reg = await registration()
+    if (!reg) return
+    await subscribeWith(reg) // upsert: harmless if already known
+  } catch (e) {
+    console.warn('[knot] push sync failed', e) // push not set up yet, or offline
+  }
 }
 
 export async function disablePush(): Promise<void> {

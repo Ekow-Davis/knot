@@ -240,10 +240,14 @@ class Round(Base):
     pulled_by: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(UUID(as_uuid=True)), server_default=text("'{}'"), nullable=False
     )
+    # Who has already read the answers (pulled while the other was away). Hidden on their phone.
+    read_by: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), server_default=text("'{}'"), nullable=False
+    )
     created_at: Mapped[datetime] = _now()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
 
-    # Migration 0002 also adds a unique index on (true): only one live round at a time.
+    # Several rounds can be live at once: sealed questions queue up for someone who's away.
     __table_args__ = (CheckConstraint(_in("state", ROUND_STATES), name="round_state"),)
 
 

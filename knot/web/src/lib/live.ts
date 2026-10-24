@@ -66,6 +66,7 @@ function connect() {
     attempt = 0
     liveState.value = 'open'
     if (lastWhere) sock.send(JSON.stringify({ type: 'where', screen: lastWhere }))
+    if (document.visibilityState !== 'visible') sock.send(JSON.stringify({ type: 'away' }))
     clearInterval(pingTimer)
     // Keeps proxies (and Railway) from closing an idle connection.
     pingTimer = setInterval(() => sock.readyState === WebSocket.OPEN && sock.send('{"type":"ping"}'), 25_000)
@@ -131,8 +132,17 @@ function reconnectNow() {
   connect()
 }
 
+/** Tell the server whether this app is actually on screen, so a background tab or a locked
+ *  phone gets a notification instead of a toast nobody sees. */
+function sendVisibility() {
+  if (ws && ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: document.visibilityState === 'visible' ? 'back' : 'away' }))
+}
+
 document.addEventListener('visibilitychange', () => {
+  sendVisibility()
   if (document.visibilityState === 'visible') reconnectNow()
 })
+window.addEventListener('pagehide', sendVisibility)
 window.addEventListener('online', reconnectNow)
 window.addEventListener('pageshow', reconnectNow)

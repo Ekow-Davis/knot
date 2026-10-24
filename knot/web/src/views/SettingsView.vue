@@ -147,8 +147,11 @@ async function togglePush() {
       pushNow.value = await enablePush()
       if (pushNow.value === 'on') toast(`Tugs on. Only ever from ${P.value}.`)
     }
-  } catch {
-    toast('That didn’t work. Try again.')
+  } catch (e) {
+    // Say what the browser said: "push service error" etc. tells us where it's stuck.
+    console.error('[knot] turning notifications on failed', e)
+    const why = e instanceof Error ? e.message : String(e)
+    toast(`Couldn’t turn them on: ${why}`)
   } finally {
     pushBusy.value = false
   }

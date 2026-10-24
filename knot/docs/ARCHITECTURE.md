@@ -125,7 +125,9 @@ draw ──► open (both answer / pass) ──► both sealed ──► both ho
 - **Empty hat:** "Shuffle them back in" reshuffles and counts as ready. The other phone sees "Baron shuffled them back in" and one tap deals.
 - **The "drawer" alternates behind the scenes** (`pair.turn_user_id`) after each reveal or pass. It only decides who guesses on a Guess card and who writes on a "Just you" card; nobody sees it as a turn.
 - **The flow when you're both here:** the reveal screen itself carries "Ready for the next one" (or swipe left) and "That's enough for tonight". There is no in-between screen: the answers stay up until the next card is dealt, then give way to it. Ending shows "Twelve knots tied.", with the count kept on the phone for that evening only.
-- **Only one round at a time,** enforced by a unique index on `rounds`.
+- **Together, one card at a time;** apart, a queue. While the other person is away you can leave up to 12 sealed questions (migration 0003 dropped the one-round index). Each phone's `/rounds/current` is the oldest card waiting on *you* (answer or pull), else the newest you're waiting on them for.
+- **Reading alone** adds you to `rounds.read_by`: the card drops off your phone so you can carry on, and stays until they pull or it expires.
+- **Push only when they can't see it:** the app reports `away`/`back` over the socket when it leaves the screen, and notifications go to anyone not connected *or* in the background (`hub.reachable`). The game itself still counts a backgrounded person as here.
 
 ## 6. Shared settings and live sync
 

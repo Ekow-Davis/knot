@@ -8,6 +8,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronDown } from 'lucide-vue-next'
 import KnotTie from '@/components/KnotTie.vue'
+import { shouldAskForPush, syncPush } from '@/lib/push'
 import { useSwipe } from '@/lib/swipe'
 import { categoryDot, personTint } from '@/lib/theme'
 import { useAuth } from '@/stores/auth'
@@ -28,6 +29,10 @@ const game = useRound()
 onMounted(() => {
   if (paired.value && !home.loaded) home.load()
   if (paired.value) game.loadCurrent()
+  // Ask about notifications once on this phone/browser, even if the phrase was already
+  // remembered (the Unlock screen, which normally asks, never showed).
+  if (paired.value && shouldAskForPush()) router.replace({ name: 'notify' })
+  else if (paired.value) syncPush() // already allowed in the browser: just sign this device up
 })
 
 // ── Avatars: each person in the colour they picked ──
@@ -46,6 +51,12 @@ const presence = computed(() => {
 
 // ── Turn, or the card already on the table ──
 const r = computed(() => game.round)
+/** Is the card on the table waiting on *me* (answer it, or pull it)? Otherwise I'm waiting on them. */
+const myMove = computed(() => {
+  const x = r.value
+  if (!x) return false
+  return (x.i_answer && !x.i_sealed) || x.state === 'ready'
+})
 const away = computed(() => paired.value && !home.partnerOnline)
 // Both here → "I'm ready" handshake. Away → you draw and leave it sealed for them.
 const hoursLeft = computed(() => {
@@ -72,6 +83,7 @@ const title = computed(() => {
 })
 const sub = computed(() => {
   if (!paired.value) return 'Make a pairing code in Settings and give it to the one person who should join you.'
+  if (r.value && !myMove.value && away.value) return 'They’ll find it when they’re back. You can leave a few; each keeps 24 hours.'
   if (r.value) return 'It waits on the table until you’ve both answered. Nothing is kept after the reveal.'
   if (away.value) return 'Leave them a sealed question. It keeps for 24 hours.'
   if (home.readyMe) return 'The card appears on both phones the moment they tap ready too.'
@@ -80,7 +92,8 @@ const sub = computed(() => {
 })
 const drawLabel = computed(() => {
   if (!paired.value) return 'Make a pairing code'
-  if (r.value) return 'Open it'
+  if (r.value && (myMove.value || !away.value)) return 'Open it'
+  if (r.value) return `Leave ${P.value} another one`
   if (away.value) return 'Leave a sealed question'
   if (home.readyMe) return `Waiting for ${P.value}… (tap to undo)`
   return home.readyThem ? 'I’m ready too' : 'I’m ready'
@@ -130,7 +143,7 @@ const chips = computed(() =>
 
 async function draw() {
   if (!paired.value) return router.push({ name: 'settings' })
-  if (r.value) return router.push({ name: 'play' })
+  if (r.value && (myMove.value || !away.value)) return router.push({ name: 'play' })
   if (!away.value) {
     // Both here: toggle "I'm ready". If that completes the pair, the card is dealt.
     if (await game.ready(!home.readyMe)) router.push({ name: 'play' })

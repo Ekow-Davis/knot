@@ -33,9 +33,17 @@ class Hub:
         # Which screen each person is on ("play", "home", "settings"…), so the other phone can say
         # "Ama went back to the home screen" instead of silently waiting.
         self.where: dict[uuid.UUID, str] = {}
+        # Connected, but the app isn't on screen (tab in the background, phone locked, switched
+        # apps). iOS can leave a suspended socket looking alive for minutes, so the phone says so
+        # itself. Only notifications use this; the game still treats them as here.
+        self.hidden: set[uuid.UUID] = set()
 
     def online(self, user_id: uuid.UUID | None) -> bool:
         return bool(user_id and self.conns.get(user_id))
+
+    def reachable(self, user_id: uuid.UUID | None) -> bool:
+        """Would they see a live toast right now? If not, send a notification instead."""
+        return self.online(user_id) and user_id not in self.hidden
 
     def add(self, user_id: uuid.UUID, ws: WebSocket) -> None:
         self.conns[user_id].add(ws)
@@ -68,6 +76,7 @@ class Hub:
         self.conns.clear()
         self.ready.clear()
         self.where.clear()
+        self.hidden.clear()
 
 
 hub = Hub()
@@ -107,6 +116,7 @@ async def live(ws: WebSocket) -> None:
     await ws.accept()
     first_connection = not hub.online(user.id)
     hub.add(user.id, ws)
+    hub.hidden.discard(user.id)  # a fresh connection means the app is open
     try:
         await ws.send_json(
             {
@@ -128,6 +138,10 @@ async def live(ws: WebSocket) -> None:
                 continue
             if msg.get("type") == "ping":
                 await ws.send_json({"type": "pong"})
+            elif msg.get("type") == "away":
+                hub.hidden.add(user.id)
+            elif msg.get("type") == "back":
+                hub.hidden.discard(user.id)
             elif msg.get("type") == "where" and msg.get("screen") in SCREENS:
                 # Purely informational, so it rides the socket rather than the REST API.
                 hub.where[user.id] = msg["screen"]
@@ -142,6 +156,7 @@ async def live(ws: WebSocket) -> None:
         if not hub.online(user.id):
             hub.ready.discard(user.id)  # closed the app: no longer "ready"
             hub.where.pop(user.id, None)
+            hub.hidden.discard(user.id)
             # Look the partner up again: they may have joined after this socket opened.
             with contextlib.suppress(Exception):
                 async with SessionLocal() as db:

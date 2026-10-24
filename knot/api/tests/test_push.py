@@ -71,6 +71,11 @@ async def test_tug_notifies_only_when_away(make_client, outbox, monkeypatch):
     await me.post("/api/rounds/tug")  # she's here: the live toast is enough
     assert len(sent) == 1
 
+    live.hub.hidden.add(uuid.UUID(her_id))  # connected, but the app is in the background
+    rounds.tugs_per_user.reset()
+    await me.post("/api/rounds/tug")
+    assert len(sent) == 2
+
 
 async def test_left_question_and_answer_notify(make_client, outbox, bank, monkeypatch):
     me, her = await paired(make_client, outbox)
@@ -78,8 +83,8 @@ async def test_left_question_and_answer_notify(make_client, outbox, bank, monkey
     sent = record_notifications(monkeypatch)
     await me.patch("/api/settings", json={"categories": ["sweet"], "depth": "deep"})
 
-    rid = (await me.post("/api/rounds")).json()["id"]  # left for her while she's away
-    assert sent[-1] == (her_id, "Baron", "left you a sealed question. It keeps for 24 hours.")
+    rid = (await me.post("/api/rounds")).json()["id"]  # drawn while she's away
+    assert sent == []  # nothing until there's actually something sealed for her
 
     import base64
     import os
@@ -92,7 +97,7 @@ async def test_left_question_and_answer_notify(make_client, outbox, bank, monkey
         }
 
     await me.post(f"/api/rounds/{rid}/seal", json=sealed())
-    assert len(sent) == 1  # not ready yet: nothing to tell her
+    assert sent[-1] == (her_id, "Baron", "left you a sealed question. It keeps for 24 hours.")
     await her.post(f"/api/rounds/{rid}/seal", json=sealed())
     assert sent[-1] == (me_id, "Ama", "answered. Your end of the rope is waiting.")
 

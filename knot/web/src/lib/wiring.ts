@@ -72,8 +72,9 @@ export function wireUp(router: Router) {
   onLive(async (msg) => {
     // Everything about the game goes to the round store.
     if (msg.type.startsWith('round.') || msg.type === 'tug') {
-      const onHome = router.currentRoute.value.name === 'home'
       await round.onEvent(msg as { type: string; [k: string]: unknown })
+      // Checked after the event, so a phone that slipped to Home mid-deal still gets the card.
+      const onHome = router.currentRoute.value.name === 'home'
       if (msg.type === 'round.drawn' && onHome) {
         // Both were ready (or they left one): the card opens on this phone too.
         if (round.round) router.push({ name: 'play' })

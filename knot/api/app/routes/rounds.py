@@ -23,7 +23,6 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..bank import BankKeyMissing, bank_key, open_question
@@ -186,6 +185,27 @@ async def _live_round(db: AsyncSession, round_id: uuid.UUID, *, lock: bool = Fal
     return rnd
 
 
+MAX_WAITING = 12  # sealed questions queued up for someone who's away
+
+
+async def _rounds_for(db: AsyncSession, pair: Pair, user_id: uuid.UUID) -> list[tuple[Round, bool]]:
+    """Live rounds as this person sees them, oldest first, with "is it my move?".
+    My move: I still have to answer it, or it's ready and I haven't read it.
+    Rounds I've already read are left out (they wait only for the other person's pull)."""
+    rounds = (
+        (await db.execute(select(Round).where(Round.expires_at > now()).order_by(Round.created_at))).scalars().all()
+    )
+    out = []
+    for r in rounds:
+        if user_id in (r.read_by or []):
+            continue
+        q = await db.get(Question, r.question_id)
+        who = _answerers(r, q, pair)
+        sealed = set((await db.execute(select(SealedAnswer.user_id).where(SealedAnswer.round_id == r.id))).scalars())
+        out.append((r, (user_id in who and user_id not in sealed) or r.state == "ready"))
+    return out
+
+
 async def _finish(db: AsyncSession, pair: Pair, rnd: Round) -> None:
     """Round over (revealed by both, passed, or retired): delete it, hand the turn over."""
     pair.turn_user_id = _other(pair, rnd.drawn_by) or rnd.drawn_by
@@ -197,19 +217,22 @@ async def _finish(db: AsyncSession, pair: Pair, rnd: Round) -> None:
 
 @router.get("/current", response_model=CurrentOut)
 async def current(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """The card for this phone: the oldest one waiting on *you*; otherwise the latest one you're
+    waiting on them for. (Several can be live: questions left sealed while the other was away.)"""
     pair, _ = await _pair(db, user)
-    rnd = (await db.execute(select(Round).where(Round.expires_at > now()))).scalar_one_or_none()
+    rows = await _rounds_for(db, pair, user.id)
+    mine = [r for r, my_move in rows if my_move]
+    rnd = mine[0] if mine else (rows[-1][0] if rows else None)
     return CurrentOut(round=await _round_out(db, rnd, user, pair) if rnd else None)
 
 
 async def _draw_for(db: AsyncSession, pair: Pair, drawer_id: uuid.UUID) -> Round:
     """Deal a card from the shared hat. `drawer_id` decides who guesses (Guess cards) and who
-    writes (Just you cards). Raises 409 round_open / empty."""
+    writes (Just you cards). Raises 409 empty. Callers decide whether a new card is allowed
+    (the pair row is locked, so two draws can't race)."""
     partner_id = _other(pair, drawer_id)
-    # An expired round the cleanup job hasn't reached yet must not block a new one.
+    # An expired round the cleanup job hasn't reached yet must not linger.
     await db.execute(delete(Round).where(Round.expires_at <= now()))
-    if (await db.execute(select(Round.id).where(Round.expires_at > now()))).first():
-        raise fail(409, "round_open", "There's already one on the table.")
 
     drawer = await db.get(User, drawer_id)
     partner = await db.get(User, partner_id) if partner_id else None
@@ -241,11 +264,7 @@ async def _draw_for(db: AsyncSession, pair: Pair, drawer_id: uuid.UUID) -> Round
     )
     db.add(rnd)
     db.add(DrawnQuestion(question_id=q.id))
-    try:
-        await db.flush()
-    except IntegrityError as e:  # another draw won the race
-        await db.rollback()
-        raise fail(409, "round_open", "There's already one on the table.") from e
+    await db.flush()
     return rnd
 
 
@@ -258,19 +277,17 @@ async def draw(user: User = Depends(current_user), db: AsyncSession = Depends(ge
         raise fail(409, "not_paired_yet", "Pair up first.")
     if hub.online(partner_id):
         raise fail(409, "use_ready", "You're both here: tap ready together.")
+    rows = await _rounds_for(db, pair, user.id)
+    if any(my_move for _, my_move in rows):
+        raise fail(409, "round_open", "There's one waiting on you first.")
+    if len(rows) >= MAX_WAITING:
+        raise fail(409, "plenty", "That's plenty waiting for them.")
     rnd = await _draw_for(db, pair, user.id)
     out = await _round_out(db, rnd, user, pair)
     await db.commit()
     hub.ready.clear()
     await hub.send(partner_id, {"type": "round.drawn", "round_id": str(rnd.id), "by": str(user.id)})
-    # They're away by definition (otherwise this would have been a ready-together draw).
-    notify_later(
-        partner_id,
-        _name(user),
-        "left you a sealed question. It keeps for 24 hours.",
-        tag="round",
-        url="/play",
-    )
+    # No notification yet: they're told once your answer is actually sealed (see seal()).
     return out
 
 
@@ -309,6 +326,9 @@ async def ready(body: ReadyIn, user: User = Depends(current_user), db: AsyncSess
     hub.ready.discard(partner_id)
     drawer = pair.turn_user_id if pair.turn_user_id in (pair.owner_id, pair.partner_id) else pair.owner_id
     try:
+        # Together, cards come one at a time: anything still on the table goes first.
+        if (await db.execute(select(Round.id).where(Round.expires_at > now()))).first():
+            raise fail(409, "round_open", "There's already one on the table.")
         rnd = await _draw_for(db, pair, drawer)
     except HTTPException as e:
         code = e.detail.get("code") if isinstance(e.detail, dict) else ""
@@ -370,8 +390,16 @@ async def seal(round_id: uuid.UUID, body: SealIn, user: User = Depends(current_u
     await hub.send(
         partner_id, {"type": "round.sealed", "round_id": str(rnd.id), "by": str(user.id), "ready": rnd.state == "ready"}
     )
-    if rnd.state == "ready" and not hub.online(partner_id):
-        notify_later(partner_id, _name(user), "answered. Your end of the rope is waiting.", tag="round", url="/play")
+    if not hub.reachable(partner_id):
+        if rnd.state == "ready":
+            notify_later(partner_id, _name(user), "answered. Your end of the rope is waiting.", tag="round", url="/play")
+        elif partner_id in who and partner_id not in sealed:
+            line = (
+                "left you a sealed question. It keeps for 24 hours."
+                if rnd.drawn_by == user.id
+                else "sealed their side. Your turn."
+            )
+            notify_later(partner_id, _name(user), line, tag="round", url="/play")
     return out
 
 
@@ -453,7 +481,9 @@ async def pull(round_id: uuid.UUID, body: PullIn, user: User = Depends(current_u
         return reveal
 
     if body.alone or not hub.online(partner_id):
-        # Read it now; the round stays for their pull (or expires after 24 hours).
+        # Read it now; the round stays for their pull (or expires after 24 hours), and it
+        # drops off this person's phone so they can carry on.
+        rnd.read_by = list(set(rnd.read_by or []) | {user.id})
         await db.commit()
         await hub.send(partner_id, {"type": "round.pull", "round_id": str(rnd.id), "by": str(user.id), "read": True})
         return PullOut(revealed=True, answers=answers, question=question, turn_user_id=pair.turn_user_id)
@@ -477,6 +507,6 @@ async def tug(user: User = Depends(current_user), db: AsyncSession = Depends(get
     _, partner_id = await _pair(db, user)
     limit(tugs_per_user, str(user.id))
     await hub.send(partner_id, {"type": "tug", "by": str(user.id)})
-    if not hub.online(partner_id):
-        notify_later(partner_id, _name(user), "gave the rope a little tug.", tag="tug", url="/")
+    if not hub.reachable(partner_id):
+        notify_later(partner_id, _name(user), "gave the rope a little tug.", tag="tug", url="/play")
     return {"ok": True}
