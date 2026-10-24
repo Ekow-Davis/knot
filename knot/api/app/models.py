@@ -23,13 +23,13 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 QUESTION_TYPES = ("guess", "both", "wyr", "self")
 DEPTHS = ("light", "medium", "deep")
 CATEGORIES = ("cozy", "silly", "sweet", "spicy", "big", "memories", "future")
-ROUND_STATES = ("open", "revealed", "verdict")
+ROUND_STATES = ("open", "ready")  # open: answering · ready: everyone sealed, waiting to pull
 
 DEFAULT_SETTINGS = {
     "depth": "light",
@@ -236,9 +236,14 @@ class Round(Base):
     passed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
     )
+    # Who has pulled their end of the knot (revealed). Both pulled → round and answers deleted.
+    pulled_by: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), server_default=text("'{}'"), nullable=False
+    )
     created_at: Mapped[datetime] = _now()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
 
+    # Migration 0002 also adds a unique index on (true): only one live round at a time.
     __table_args__ = (CheckConstraint(_in("state", ROUND_STATES), name="round_state"),)
 
 

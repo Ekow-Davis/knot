@@ -1,0 +1,179 @@
+/* Shared screen pieces, taken from the Knot design so every screen matches. */
+
+.screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  /* The design's 62px/44px already allow for the status bar and home bar; only grow on taller notches. */
+  padding: max(62px, calc(var(--safe-top) + 14px)) 24px max(44px, calc(var(--safe-bottom) + 12px));
+  max-width: 480px;
+  margin: 0 auto;
+  animation: fadeIn calc(0.6s * var(--m)) ease both;
+}
+.screen > .grow {
+  flex: 1;
+}
+
+.back {
+  align-self: flex-start;
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.eyebrow {
+  font: 700 11px/1 var(--sans);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accentInk);
+}
+.title {
+  margin: 0;
+  font: 500 40px/1.04 var(--serif);
+  text-wrap: balance;
+}
+.sub {
+  margin: 0;
+  font: 400 15px/1.5 var(--sans);
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.note {
+  margin: 0;
+  text-align: center;
+  font: 400 12px/1.5 var(--sans);
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.error {
+  margin: 0;
+  text-align: center;
+  font: 500 14px/1.45 var(--sans);
+  color: var(--warn);
+  animation: fadeIn 0.3s ease both;
+}
+
+.field {
+  height: 60px;
+  width: 100%;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 20px;
+  font: 500 18px/1 var(--sans);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.field:focus {
+  border-color: var(--accent);
+}
+.field::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.btn {
+  height: 56px;
+  width: 100%;
+  border: none;
+  border-radius: 28px;
+  background: var(--accent);
+  color: var(--onAccent);
+  font: 600 16px/1 var(--sans);
+  box-shadow: 0 12px 30px -12px var(--glow);
+  transition:
+    transform 0.15s,
+    opacity 0.3s;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn.ghost {
+  height: 52px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font-weight: 500;
+  font-size: 15px;
+  box-shadow: none;
+}
+.btn.link {
+  height: 44px;
+  background: none;
+  box-shadow: none;
+  color: var(--accentInk);
+  font-size: 14px;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--surface);
+  padding: 20px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes shake {
+  0%,
+  100% {
+    transform: none;
+  }
+  20% {
+    transform: translateX(-8px);
+  }
+  40% {
+    transform: translateX(7px);
+  }
+  60% {
+    transform: translateX(-5px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+@keyframes bumpOff {
+  0% {
+    transform: translateX(90px);
+    opacity: 0;
+  }
+  35% {
+    transform: translateX(12px);
+    opacity: 1;
+  }
+  50% {
+    transform: translateX(26px);
+  }
+  75% {
+    transform: translateX(18px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(110px) rotate(40deg);
+    opacity: 0;
+  }
+}

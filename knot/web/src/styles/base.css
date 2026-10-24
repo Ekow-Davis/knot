@@ -51,7 +51,7 @@ body {
 
 #app {
   min-height: 100dvh;
-  padding: var(--safe-top) 0 var(--safe-bottom);
+  /* No padding here: each screen adds the notch / home-bar insets (--safe-top/--safe-bottom) itself. */
   transition: background calc(0.4s * var(--m)) ease;
 }
 
@@ -60,6 +60,12 @@ button {
   color: inherit;
   min-height: 44px; /* tap target */
   cursor: pointer;
+  /* No 300ms double-tap-zoom delay on iPhone. */
+  touch-action: manipulation;
+}
+
+textarea {
+  font-size: max(16px, 1em); /* 16px+ stops iOS zooming in when typing */
 }
 
 input {

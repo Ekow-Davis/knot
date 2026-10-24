@@ -1,0 +1,55 @@
+{
+  "id": "test-000",
+  "version": 1,
+  "questions": [
+    {"id": "test-000-001", "type": "guess", "depth": "light", "category": "cozy", "q": "What would {p} cook on a lazy Sunday if nobody was watching?"},
+    {"id": "test-000-002", "type": "both", "depth": "light", "category": "cozy", "q": "What's your perfect rainy-evening plan?"},
+    {"id": "test-000-003", "type": "wyr", "depth": "light", "category": "cozy", "q": "On a free Saturday, would you rather…", "options": ["Stay in and do nothing", "Go out and do everything"]},
+    {"id": "test-000-004", "type": "self", "depth": "light", "category": "cozy", "q": "What small thing instantly makes a bad day better?"},
+    {"id": "test-000-005", "type": "both", "depth": "medium", "category": "cozy", "q": "When do you feel most at home with me?"},
+    {"id": "test-000-006", "type": "self", "depth": "deep", "category": "cozy", "q": "What does feeling truly safe look like for you?"},
+
+    {"id": "test-000-007", "type": "guess", "depth": "light", "category": "silly", "q": "Which song would {p} pick for a dramatic entrance?"},
+    {"id": "test-000-008", "type": "wyr", "depth": "light", "category": "silly", "q": "Would you rather…", "options": ["Only eat waakye for a month", "Never eat waakye again"]},
+    {"id": "test-000-009", "type": "both", "depth": "light", "category": "silly", "q": "What's the most useless talent you have?"},
+    {"id": "test-000-010", "type": "guess", "depth": "light", "category": "silly", "q": "If {p} were a trotro sticker, what would it say?"},
+    {"id": "test-000-011", "type": "wyr", "depth": "medium", "category": "silly", "q": "Would you rather…", "options": ["Always speak in rhymes", "Always sing instead of talk"]},
+
+    {"id": "test-000-012", "type": "both", "depth": "light", "category": "sweet", "q": "What's a tiny thing I do that you secretly love?"},
+    {"id": "test-000-013", "type": "guess", "depth": "light", "category": "sweet", "q": "What compliment would make {p} smile the longest?"},
+    {"id": "test-000-014", "type": "self", "depth": "medium", "category": "sweet", "q": "When did you first realise you really liked me?"},
+    {"id": "test-000-015", "type": "wyr", "depth": "light", "category": "sweet", "q": "Would you rather get…", "options": ["A handwritten letter", "A surprise visit"]},
+    {"id": "test-000-016", "type": "both", "depth": "deep", "category": "sweet", "q": "What do you hope I always remember about us?"},
+
+    {"id": "test-000-017", "type": "wyr", "depth": "light", "category": "spicy", "q": "Would you rather…", "options": ["A slow kiss", "A surprise one"]},
+    {"id": "test-000-018", "type": "guess", "depth": "light", "category": "spicy", "q": "Where does {p} most like to be kissed?"},
+    {"id": "test-000-019", "type": "both", "depth": "medium", "category": "spicy", "q": "What's something I do that drives you a little wild?"},
+    {"id": "test-000-020", "type": "self", "depth": "deep", "category": "spicy", "q": "Describe a night with me you'd like to happen someday."},
+
+    {"id": "test-000-021", "type": "both", "depth": "light", "category": "big", "q": "What's a belief you've changed your mind about?"},
+    {"id": "test-000-022", "type": "wyr", "depth": "medium", "category": "big", "q": "Would you rather…", "options": ["Know exactly how your life turns out", "Never know until it happens"]},
+    {"id": "test-000-023", "type": "self", "depth": "medium", "category": "big", "q": "What are you most proud of that nobody really knows about?"},
+    {"id": "test-000-024", "type": "guess", "depth": "medium", "category": "big", "q": "What does {p} think makes a life well lived?"},
+    {"id": "test-000-025", "type": "both", "depth": "deep", "category": "big", "q": "What's something you're still learning to forgive yourself for?"},
+
+    {"id": "test-000-026", "type": "guess", "depth": "light", "category": "memories", "q": "What does {p} remember most about the first time we talked properly?"},
+    {"id": "test-000-027", "type": "both", "depth": "light", "category": "memories", "q": "What's your favourite memory from our senior high days?"},
+    {"id": "test-000-028", "type": "self", "depth": "light", "category": "memories", "q": "What's a moment with me you replay in your head sometimes?"},
+    {"id": "test-000-029", "type": "wyr", "depth": "light", "category": "memories", "q": "Would you rather relive…", "options": ["Our first date", "Our silliest day together"]},
+    {"id": "test-000-030", "type": "both", "depth": "medium", "category": "memories", "q": "When did you feel closest to me?"},
+
+    {"id": "test-000-031", "type": "both", "depth": "light", "category": "future", "q": "Where should our next trip be?"},
+    {"id": "test-000-032", "type": "guess", "depth": "light", "category": "future", "q": "What would {p} name a dog?"},
+    {"id": "test-000-033", "type": "wyr", "depth": "light", "category": "future", "q": "Would you rather live…", "options": ["By the sea", "Up in the hills"]},
+    {"id": "test-000-034", "type": "self", "depth": "medium", "category": "future", "q": "What does a really good ordinary Tuesday look like for us in ten years?"},
+    {"id": "test-000-035", "type": "both", "depth": "deep", "category": "future", "q": "What scares you a little about our future, and what excites you?"},
+
+    {"id": "test-000-036", "type": "guess", "depth": "medium", "category": "cozy", "q": "What does {p} need most after a long day?"},
+    {"id": "test-000-037", "type": "both", "depth": "medium", "category": "silly", "q": "If we had a couple's theme song, what would it be?"},
+    {"id": "test-000-038", "type": "guess", "depth": "medium", "category": "sweet", "q": "What's {p}'s favourite way to be cared for?"},
+    {"id": "test-000-039", "type": "wyr", "depth": "medium", "category": "sweet", "q": "Would you rather…", "options": ["Hear 'I love you' every day", "Feel it without the words"]},
+    {"id": "test-000-040", "type": "both", "depth": "medium", "category": "future", "q": "What's one tradition we should start?"},
+    {"id": "test-000-041", "type": "self", "depth": "deep", "category": "memories", "q": "What's a hard moment that made you who you are?"},
+    {"id": "test-000-042", "type": "guess", "depth": "deep", "category": "big", "q": "What is {p} most afraid of losing?"}
+  ]
+}

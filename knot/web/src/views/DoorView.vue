@@ -1,79 +1,110 @@
 <script setup lang="ts">
-/**
- * The door: first screen of the installed app.
- * Session 1 placeholder — proves the shell, theme and API connection work end to end.
- * Session 2 replaces the body with the email → code → pairing → name flow.
- */
-import { onMounted, ref } from 'vue'
-import KnotMark from '@/components/KnotMark.vue'
-import { api } from '@/lib/api'
+/** The door: first screen of the installed app for anyone not signed in. */
+import { useRouter } from 'vue-router'
+import KnotTie from '@/components/KnotTie.vue'
 
-const status = ref<'checking' | 'ok' | 'down'>('checking')
-
-onMounted(async () => {
-  try {
-    await api.get<{ ok: boolean }>('/health')
-    status.value = 'ok'
-  } catch {
-    status.value = 'down'
-  }
-})
+const router = useRouter()
 </script>
 
 <template>
-  <main class="door">
-    <KnotMark :size="84" />
-    <h1 class="serif">Knot</h1>
-    <p class="sub">Two people. One question at a time.</p>
-
-    <p class="status" :data-status="status" role="status">
-      <span class="dot" />
-      {{ status === 'checking' ? 'Reaching the server…' : status === 'ok' ? 'Connected' : 'Server unreachable' }}
-    </p>
+  <main class="screen door">
+    <div class="grow stage">
+      <div class="arch" aria-hidden="true">
+        <div class="inner" />
+        <div class="seam" />
+        <div class="knot"><KnotTie :w="238" mode="tie" :delay="0.4" glow halo="var(--surface2)" /></div>
+        <div class="keyhole"><span /><span /></div>
+      </div>
+      <div class="words">
+        <h1 class="name">Knot</h1>
+        <p class="sub">This door only opens for two. If that isn't you, it was lovely to meet you anyway.</p>
+      </div>
+    </div>
+    <button class="btn" type="button" @click="router.push({ name: 'email' })">Come in</button>
   </main>
 </template>
 
 <style scoped>
 .door {
-  min-height: 100dvh;
+  padding-top: max(80px, calc(var(--safe-top) + 30px));
+  align-items: center;
+  animation-duration: calc(0.9s * var(--m));
+}
+.stage {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 24px;
-  text-align: center;
-  background: radial-gradient(ellipse at 50% 30%, var(--surface) 0%, var(--bg) 60%, var(--bg2) 100%);
+  gap: 36px;
+  width: 100%;
 }
-h1 {
-  margin: 16px 0 0;
-  font-size: 56px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+.arch {
+  position: relative;
+  width: 210px;
+  height: 300px;
+  border-radius: 105px 105px 8px 8px;
+  background: var(--surface2);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    0 40px 90px -30px var(--glow);
 }
-.sub {
-  margin: 0;
-  color: var(--muted);
+.inner {
+  position: absolute;
+  inset: 14px 14px 0;
+  border-radius: 91px 91px 2px 2px;
+  border: 1px solid var(--line);
+  border-bottom: none;
 }
-.status {
-  margin-top: 40px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--muted);
-}
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.seam {
+  position: absolute;
+  left: 104px;
+  top: 40px;
+  bottom: 0;
+  width: 1px;
   background: var(--line);
 }
-[data-status='ok'] .dot {
-  background: var(--accent);
-  box-shadow: 0 0 10px var(--glow);
+.knot {
+  position: absolute;
+  left: -14px;
+  top: 100px;
 }
-[data-status='down'] .dot {
-  background: var(--warn);
+.keyhole {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.keyhole span:first-child {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bg2);
+}
+.keyhole span:last-child {
+  width: 6px;
+  height: 14px;
+  margin-top: -3px;
+  background: var(--bg2);
+  border-radius: 0 0 2px 2px;
+}
+.words {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.name {
+  margin: 0;
+  font: italic 500 48px/1 var(--serif);
+  color: var(--accentInk);
+}
+.sub {
+  max-width: 260px;
+  font-size: 15px;
+  line-height: 1.55;
 }
 </style>

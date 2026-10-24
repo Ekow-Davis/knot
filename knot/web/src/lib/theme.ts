@@ -71,9 +71,51 @@ export function palette(mode: Mode, b: number, a: number, deep = false): Record<
   }
 }
 
-/** The reveal-card tint for a person's accent hue (their colour on the reveal screen). */
-export const tint = (hue: number, mode: Mode) =>
-  mode === 'night' ? ok(0.3, 0.06, hue) : ok(0.93, 0.04, hue)
+/**
+ * A person's colour, from their accent hue: their avatar ring, and (Session 5) their answer
+ * card at the reveal. Each phone draws both people in their own chosen colours.
+ */
+export function personTint(hue: number, mode: Mode) {
+  const n = mode === 'night'
+  const ring = ok(n ? 0.74 : 0.64, 0.12, hue)
+  return {
+    ring,
+    ink: ok(n ? 0.84 : 0.42, 0.11, hue),
+    bg: `color-mix(in oklch, var(--surface) 84%, ${ring})`,
+  }
+}
+
+/** Hue for a category's dot (from the design). */
+export const CATEGORY_HUES: Record<string, number> = {
+  cozy: 70,
+  silly: 140,
+  sweet: 10,
+  spicy: 35,
+  big: 265,
+  memories: 95,
+  future: 205,
+}
+export const categoryDot = (id: string) => ok(0.76, 0.12, CATEGORY_HUES[id] ?? 0)
+export const swatchBg = (baseHue: number, mode: Mode) =>
+  mode === 'night' ? ok(0.24, 0.05, baseHue) : ok(0.95, 0.02, baseHue)
+export const swatchRing = (accentHue: number) => ok(0.79, 0.11, accentHue)
+
+/** Server shape (snake_case) ⇄ app shape. */
+export function fromServerTheme(t: {
+  mode?: Mode
+  preset?: string
+  base_hue?: number
+  accent_hue?: number
+}): ThemePrefs | null {
+  if (!t || t.mode == null || t.base_hue == null || t.accent_hue == null) return null
+  return { mode: t.mode, preset: t.preset ?? 'custom', baseHue: t.base_hue, accentHue: t.accent_hue }
+}
+export const toServerTheme = (p: ThemePrefs) => ({
+  mode: p.mode,
+  preset: p.preset,
+  base_hue: Math.round(p.baseHue),
+  accent_hue: Math.round(p.accentHue),
+})
 
 /**
  * OKLCH → #rrggbb. Needed because the <meta name="theme-color"> tag (status bar colour)

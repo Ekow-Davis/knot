@@ -55,7 +55,8 @@ export default defineConfig({
   server: {
     // FastAPI runs on :8000 in development; same-origin in production.
     proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true, ws: true },
+      // 127.0.0.1, not localhost: on Windows "localhost" may try IPv6 first, and uvicorn only listens on IPv4.
+      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true, ws: true },
     },
   },
 })

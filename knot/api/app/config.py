@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     # Railway gives postgresql://...; we rewrite it to the asyncpg driver below.
     database_url: str = "postgresql+asyncpg://knot:knot@localhost:5432/knot"
+    # Tests open a fresh connection each time (each test has its own event loop).
+    db_null_pool: bool = False
 
     # 32+ random bytes, used for HMAC of email codes, invites and verified-email tickets.
     secret_key: str = "dev-only-change-me"

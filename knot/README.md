@@ -31,9 +31,30 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\act
 pip install -r requirements.txt
 cp .env.example .env                                 # fill SECRET_KEY, BANK_KEY, OWNER_EMAIL
 alembic upgrade head
-pytest                                               # checks models.py matches the migration
+pytest                                               # needs the knot_test database, see below
 uvicorn app.main:app --reload --port 8000
 ```
+
+**Tests** run against their own database, so your dev data is never touched. Create it once in psql:
+
+```sql
+CREATE DATABASE knot_test OWNER knot;
+```
+
+**Questions:** the game needs a question bank. For testing, import the throwaway test pack (42 placeholder
+questions, not part of the real bank). `BANK_KEY` must be set in `api/.env` first:
+
+```bash
+python -m app.tools.import_pack sample/test-000.json
+# later, before the real bank goes in:
+python -m app.tools.import_pack --remove test-000
+```
+
+The real bank arrives as encrypted `.pack` files and imports the same way. The tool only ever prints counts.
+
+**Sign-in codes in development:** if `RESEND_API_KEY` is empty, codes are printed in the uvicorn
+terminal (`DEV sign-in code for …`) instead of emailed. With the key set, real emails go out, which
+needs `MAIL_FROM` on a domain you've verified in Resend.
 
 **3. Web** (terminal 2)
 
