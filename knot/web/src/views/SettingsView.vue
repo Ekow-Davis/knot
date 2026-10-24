@@ -6,6 +6,7 @@ import KnotTie from '@/components/KnotTie.vue'
 import { useSwipe } from '@/lib/swipe'
 import { api, ApiError } from '@/lib/api'
 import { loadKey } from '@/lib/keystore'
+import { disablePush, enablePush, markAskedForPush, pushState, type PushState } from '@/lib/push'
 import { PRESETS, swatchBg, swatchRing } from '@/lib/theme'
 import { toast } from '@/lib/toast'
 import type { InviteOut, InviteStatus } from '@/lib/types'
@@ -121,6 +122,38 @@ async function lockNow() {
   router.replace({ name: 'unlock' })
 }
 
+// ── Notifications on this phone ──
+const pushNow = ref<PushState>('off')
+const pushBusy = ref(false)
+const pushOn = computed(() => pushNow.value === 'on')
+const pushNote = computed(() =>
+  pushNow.value === 'needs-install'
+    ? 'Add it to your Home Screen first'
+    : pushNow.value === 'denied'
+      ? 'Turned off in your phone’s Settings › Notifications › W.W.'
+      : pushNow.value === 'unsupported'
+        ? 'Not available in this browser'
+        : '',
+)
+async function togglePush() {
+  pushBusy.value = true
+  try {
+    if (pushOn.value) {
+      await disablePush()
+      pushNow.value = 'off'
+      toast('Tugs off on this phone.')
+    } else {
+      markAskedForPush()
+      pushNow.value = await enablePush()
+      if (pushNow.value === 'on') toast(`Tugs on. Only ever from ${P.value}.`)
+    }
+  } catch {
+    toast('That didn’t work. Try again.')
+  } finally {
+    pushBusy.value = false
+  }
+}
+
 async function signOut() {
   await auth.logout()
   toast('Signed out. The door is closed.')
@@ -129,6 +162,7 @@ async function signOut() {
 
 onMounted(async () => {
   remembered.value = (await loadKey()) !== null
+  pushState().then((s) => (pushNow.value = s))
   if (isOwnerUnpaired.value) refreshInvite()
 })
 </script>
@@ -249,6 +283,13 @@ onMounted(async () => {
     </section>
 
     <section class="list">
+      <button type="button" class="toggle-row" :disabled="pushBusy || pushNote !== ''" @click="togglePush">
+        <span class="row-text">
+          <span>Tugs and turn alerts</span>
+          <span v-if="pushNote" class="muted small">{{ pushNote }}</span>
+        </span>
+        <span class="track" :class="{ on: pushOn }"><span class="knob" /></span>
+      </button>
       <button type="button" @click="router.push({ name: 'unlock', query: { mode: 'change' } })">
         <span>Retie the knot</span><ChevronRight :size="18" class="muted" />
       </button>
@@ -529,6 +570,44 @@ onMounted(async () => {
 }
 .list button:last-child {
   border-bottom: none;
+}
+.toggle-row {
+  gap: 12px;
+}
+.toggle-row:disabled {
+  cursor: default;
+}
+.row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+.track {
+  position: relative;
+  width: 51px;
+  height: 31px;
+  border-radius: 16px;
+  background: var(--line);
+  transition: background 0.25s;
+  flex: none;
+}
+.track.on {
+  background: var(--accent);
+}
+.knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.25);
+  transition: transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.track.on .knob {
+  transform: translateX(20px);
 }
 .footer {
   margin: 0;

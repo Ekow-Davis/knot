@@ -9,3 +9,4 @@ cryptography==44.0.2
 httpx==0.28.1
 pytest==8.3.5
 pytest-asyncio==0.26.0
+pywebpush==2.0.3

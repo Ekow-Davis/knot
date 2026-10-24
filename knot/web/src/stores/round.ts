@@ -53,6 +53,8 @@ export const useRound = defineStore('round', () => {
   const passedBy = ref<string | null>(null) // set when the *other* person passed
   const empty = ref(false)
   const expired = ref(false)
+  /** Between cards, both at the table: "Ready when you both are." (after a pass, expiry or reshuffle) */
+  const between = ref(false)
   const busy = ref(false)
 
   // Draft answer: kept per round so a trip to Settings doesn't lose it.
@@ -70,12 +72,12 @@ export const useRound = defineStore('round', () => {
   const tonight = ref(readTonight())
   let lastCounted: string | null = null
 
-  const phase = computed<'none' | 'answer' | 'waiting' | 'reveal' | 'passed' | 'empty' | 'expired'>(() => {
+  const phase = computed<'none' | 'answer' | 'waiting' | 'reveal' | 'passed' | 'empty' | 'expired' | 'between'>(() => {
     if (reveal.value) return 'reveal'
     if (passedBy.value) return 'passed'
     if (expired.value) return 'expired'
     if (empty.value) return 'empty'
-    if (!round.value) return 'none'
+    if (!round.value) return between.value ? 'between' : 'none'
     if (round.value.i_answer && !round.value.i_sealed) return 'answer'
     return 'waiting'
   })
@@ -102,6 +104,13 @@ export const useRound = defineStore('round', () => {
     passedBy.value = null
     empty.value = false
     expired.value = false
+    between.value = false
+  }
+
+  /** Leave a pass / expiry / empty hat behind and wait at the table for the next card together. */
+  function toBetween() {
+    clearOutcome()
+    between.value = true
   }
 
   async function loadCurrent() {
@@ -126,7 +135,7 @@ export const useRound = defineStore('round', () => {
       const code = e instanceof ApiError ? e.code : ''
       if (code === 'empty') empty.value = true
       else if (code === 'round_open') await loadCurrent()
-      else if (code === 'not_your_turn') toast(`It’s ${auth.partnerName}’s turn to draw.`)
+      else if (code === 'use_ready') return ready(true)
       else if (code === 'bank_key_missing') toast('The question bank isn’t set up on the server yet.')
       else toast('Couldn’t draw one. Try again.')
       return code === 'empty' || code === 'round_open'
@@ -135,10 +144,48 @@ export const useRound = defineStore('round', () => {
     }
   }
 
+  /**
+   * Both here: "I'm ready" (or take it back). When you're both ready, the server deals one
+   * card to both phones at once, so this phone gets it in the reply or over the live link.
+   */
+  async function ready(on: boolean): Promise<boolean> {
+    home.readyMe = on
+    try {
+      const r = await api.post<{ drawn: boolean; empty: boolean; round: RoundOut | null }>('/rounds/ready', {
+        ready: on,
+      })
+      if (r.empty) {
+        home.clearReady()
+        empty.value = true
+        return true
+      }
+      if (r.drawn && r.round) {
+        home.clearReady()
+        clearOutcome()
+        accept(r.round)
+        return true
+      }
+      return false
+    } catch {
+      home.readyMe = !on
+      toast('That didn’t go through. Try again.')
+      return false
+    }
+  }
+
+  /**
+   * "Shuffle them back in". Away: just reshuffle (the caller draws). Both here: reshuffle and
+   * count as ready, so their phone shows "Baron shuffled them back in" and one tap deals.
+   */
   async function reshuffle() {
     const r = await api.post<{ shuffled_back: number }>('/rounds/reshuffle')
     toast(r.shuffled_back ? 'Shuffled back in.' : 'Nothing to shuffle back yet.')
-    empty.value = false
+    if (home.partnerOnline) {
+      toBetween()
+      await ready(true)
+    } else {
+      empty.value = false
+    }
   }
 
   async function seal() {
@@ -286,8 +333,20 @@ export const useRound = defineStore('round', () => {
     const by = msg.by as string | undefined
     switch (msg.type) {
       case 'round.drawn':
+        home.clearReady()
         clearOutcome()
         await loadCurrent()
+        break
+      case 'round.empty':
+        home.clearReady()
+        clearOutcome()
+        empty.value = true
+        break
+      case 'round.reshuffled':
+        if (by !== myId()) {
+          toBetween()
+          home.say(`${auth.partnerName} shuffled them back in`)
+        }
         break
       case 'round.sealed':
         await loadCurrent()
@@ -340,6 +399,7 @@ export const useRound = defineStore('round', () => {
     passedBy,
     empty,
     expired,
+    between,
     busy,
     draft,
     choice,
@@ -353,6 +413,7 @@ export const useRound = defineStore('round', () => {
     loadCurrent,
     draw,
     reshuffle,
+    ready,
     seal,
     pass,
     hold,
@@ -363,6 +424,7 @@ export const useRound = defineStore('round', () => {
     tug,
     onEvent,
     clearOutcome,
+    toBetween,
     reset,
   }
 })

@@ -75,6 +75,12 @@ export const router = createRouter({
       meta: { auth: true, knot: true },
     },
     {
+      path: '/notify',
+      name: 'notify',
+      component: () => import('@/views/NotifyView.vue'),
+      meta: { auth: true, knot: true },
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('@/views/SettingsView.vue'),

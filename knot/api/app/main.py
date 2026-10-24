@@ -13,7 +13,7 @@ from .config import get_settings
 from .db import get_db
 from .purge import purge_forever
 from . import live
-from .routes import auth, home, invites, knot, me, rounds
+from .routes import auth, home, invites, knot, me, push, rounds
 
 settings = get_settings()
 
@@ -81,6 +81,7 @@ api.include_router(me.router)
 api.include_router(knot.router)
 api.include_router(home.router)
 api.include_router(rounds.router)
+api.include_router(push.router)
 api.include_router(live.router)  # /api/ws
 app.include_router(api)
 
@@ -103,7 +104,7 @@ if static_dir.is_dir():
         if path and candidate.is_file() and candidate.is_relative_to(static_dir):
             headers = {}
             # The service worker must never be cached, or updates get stuck on the phone.
-            if candidate.name in {"sw.js", "registerSW.js", "manifest.webmanifest"}:
+            if candidate.name in {"sw.js", "registerSW.js", "push-sw.js", "manifest.webmanifest"}:
                 headers["Cache-Control"] = "no-cache"
             return FileResponse(candidate, headers=headers)
         return FileResponse(static_dir / "index.html", headers={"Cache-Control": "no-cache"})

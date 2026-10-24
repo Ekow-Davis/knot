@@ -1,6 +1,7 @@
 """Import a question pack into the database without ever printing a question.
 
-    python -m app.tools.import_pack path/to/silly-002.pack      # encrypted (the real bank)
+    python -m app.tools.import_pack packs/*.pack --key-file packs/transport.key   # the real bank
+    python -m app.tools.import_pack path/to/silly-002.pack      # encrypted with BANK_KEY
     python -m app.tools.import_pack sample/test-000.json        # plain JSON (throwaway test packs)
     python -m app.tools.import_pack --remove test-000           # take a pack (and its questions) out
 
@@ -18,7 +19,7 @@ from pathlib import Path
 
 from sqlalchemy import delete, select
 
-from ..bank import BankKeyMissing, bank_key, parse_pack, seal_question
+from ..bank import BankKeyMissing, bank_key, parse_pack, read_key_file, seal_question
 from ..db import SessionLocal, engine
 from ..models import DEPTHS, Question, QuestionPack
 
@@ -31,12 +32,12 @@ def _table(counts: Counter) -> str:
     return "\n".join(lines)
 
 
-async def import_pack(path: Path) -> int:
+async def import_pack(path: Path, pack_key: bytes | None = None) -> int:
     raw = path.read_bytes()
     checksum = hashlib.sha256(raw).hexdigest()
     try:
         key = bank_key()
-        pack = parse_pack(raw)
+        pack = parse_pack(raw, pack_key)
     except BankKeyMissing as e:
         print(e, file=sys.stderr)
         return 2
@@ -101,15 +102,21 @@ async def remove_pack(pack_id: str) -> int:
 
 async def _main(argv: list[str]) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("file", nargs="?", type=Path)
+    p.add_argument("files", nargs="*", type=Path)
     p.add_argument("--remove", metavar="PACK_ID")
+    p.add_argument("--key-file", type=Path, help="transport key the packs were sealed with")
     args = p.parse_args(argv)
     try:
         if args.remove:
             return await remove_pack(args.remove)
-        if not args.file:
-            p.error("give a pack file, or --remove PACK_ID")
-        return await import_pack(args.file)
+        if not args.files:
+            p.error("give pack file(s), or --remove PACK_ID")
+        pack_key = read_key_file(args.key_file) if args.key_file else None
+        worst = 0
+        for f in args.files:  # the shell may not expand *.pack on Windows, so expand here too
+            for path in sorted(f.parent.glob(f.name)) if "*" in f.name else [f]:
+                worst = max(worst, await import_pack(path, pack_key))
+        return worst
     finally:
         await engine.dispose()
 

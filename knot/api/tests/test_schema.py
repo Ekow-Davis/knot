@@ -15,7 +15,15 @@ pytestmark = pytest.mark.asyncio
 
 
 def _diff(sync_conn):
-    ctx = MigrationContext.configure(sync_conn, opts={"compare_type": True, "compare_server_default": False})
+    # Same filter as migrations/env.py: the "one round at a time" index lives only in SQL.
+    ctx = MigrationContext.configure(
+        sync_conn,
+        opts={
+            "compare_type": True,
+            "compare_server_default": False,
+            "include_object": lambda obj, name, type_, *_: not (type_ == "index" and name == "one_round_at_a_time"),
+        },
+    )
     return compare_metadata(ctx, Base.metadata)
 
 

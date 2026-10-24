@@ -6,7 +6,7 @@
  */
 import { watch } from 'vue'
 import type { Router } from 'vue-router'
-import { onLive, setLiveExpiredHandler, startLive, stopLive } from './live'
+import { onLive, setLiveExpiredHandler, setWhere, startLive, stopLive } from './live'
 import { toast } from './toast'
 import { useAuth } from '@/stores/auth'
 import { useHome } from '@/stores/home'
@@ -54,6 +54,16 @@ export function wireUp(router: Router) {
     { immediate: true },
   )
 
+  // Tell the other phone where this one is, so nobody waits at the table alone without knowing.
+  watch(
+    () => router.currentRoute.value.name,
+    (name) => {
+      const n = String(name ?? '')
+      if (['play', 'home', 'settings', 'unlock', 'tonight'].includes(n)) setWhere(n)
+    },
+    { immediate: true },
+  )
+
   setLiveExpiredHandler(() => {
     auth.markExpired()
     router.replace({ name: 'away' })
@@ -62,9 +72,13 @@ export function wireUp(router: Router) {
   onLive(async (msg) => {
     // Everything about the game goes to the round store.
     if (msg.type.startsWith('round.') || msg.type === 'tug') {
-      const wasOnHome = router.currentRoute.value.name === 'home'
+      const onHome = router.currentRoute.value.name === 'home'
       await round.onEvent(msg as { type: string; [k: string]: unknown })
-      if (msg.type === 'round.drawn' && wasOnHome) toast(`${auth.partnerName} drew one for you both.`)
+      if (msg.type === 'round.drawn' && onHome) {
+        // Both were ready (or they left one): the card opens on this phone too.
+        if (round.round) router.push({ name: 'play' })
+      }
+      if (msg.type === 'round.empty' && onHome) router.push({ name: 'play' })
       if (msg.type === 'round.revealed' || msg.type === 'round.passed') home.load()
       return
     }
@@ -72,6 +86,8 @@ export function wireUp(router: Router) {
       case 'hello':
         // Fresh connection (first, or after the phone slept): re-fetch so nothing is missed.
         home.setPresence(msg.partner_online)
+        home.readyThem = msg.partner_ready
+        home.partnerWhere = msg.partner_where
         if (auth.me?.pair_complete) {
           home.load()
           round.loadCurrent()
@@ -85,6 +101,12 @@ export function wireUp(router: Router) {
         break
       case 'presence':
         home.setPresence(msg.online)
+        break
+      case 'ready':
+        if (msg.user_id !== auth.me?.id) home.remoteReady(msg.ready)
+        break
+      case 'where':
+        home.partnerWhere = msg.screen
         break
       case 'settings':
         home.remoteSettings(msg.settings, msg.by)

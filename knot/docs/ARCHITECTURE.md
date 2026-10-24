@@ -115,8 +115,16 @@ draw ──► open (both answer / pass) ──► both sealed ──► both ho
   - **They're here but haven't pulled after 15 seconds:** "Read it now" appears.
   - The ring filling is shown live to the other phone (`round.hold`), but only as animation.
 - **Guess verdict:** an automatic match if the guess and the truth share a meaningful word. Otherwise the person who was guessed about decides "Close enough?". It's broadcast, never stored.
-- **Turn-taking:** after a reveal or a pass, the turn goes to the person who didn't draw. If the other person is away, you can draw anyway; that's how "leave a sealed question" works.
-- **The flow when you're both here:** reveal → "Let it go" (or swipe up) dissolves the answers on the phone → "Draw the next one" (or swipe left) / "That's enough for tonight" → "Twelve knots tied." The count is kept on the phone for that evening only.
+- **Starting a card when you're both here: "I'm ready".**
+  - Each person taps ready (`POST /api/rounds/ready`), and the other phone sees "Ama is ready." Ready can be taken back.
+  - When both are ready, the server deals one card to both phones at once (`round.drawn` to both).
+  - Ready lives in memory only, and closing the app clears it.
+  - Drawing alone (`POST /api/rounds`) is refused with `use_ready` while both are online.
+- **One person away:** whoever is on draws directly. That's "leave a sealed question".
+- **Where each person is:** each phone tells the other which screen it's on (a `where` message on the socket; information only, not stored). The game screen can then say "Ama went back to the home screen" or show mix changes ("Ama changed depth to Deep"), and Home can say "Ama is still at the table".
+- **Empty hat:** "Shuffle them back in" reshuffles and counts as ready. The other phone sees "Baron shuffled them back in" and one tap deals.
+- **The "drawer" alternates behind the scenes** (`pair.turn_user_id`) after each reveal or pass. It only decides who guesses on a Guess card and who writes on a "Just you" card; nobody sees it as a turn.
+- **The flow when you're both here:** the reveal screen itself carries "Ready for the next one" (or swipe left) and "That's enough for tonight". There is no in-between screen: the answers stay up until the next card is dealt, then give way to it. Ending shows "Twelve knots tied.", with the count kept on the phone for that evening only.
 - **Only one round at a time,** enforced by a unique index on `rounds`.
 
 ## 6. Shared settings and live sync
@@ -128,8 +136,9 @@ draw ──► open (both answer / pass) ──► both sealed ──► both ho
 - **How live updates work:** every change goes through a normal REST endpoint (`PATCH /api/settings`, `PUT /api/me/spicy`, `PATCH /api/me`, `POST/PUT /api/knot`). After it commits, the server pushes the new state to both phones over `/api/ws`. The socket only carries server-to-phone events plus a keep-alive ping.
   - **Sign-in on the socket:** the same session cookie. A connection without a valid session closes with code 4401, which the app treats as "signed out".
   - **Reconnecting:** iOS kills sockets in the background, so the app reconnects when it returns to the foreground, when the network comes back, or with backoff from 1 to 30 seconds. Each connection starts with `hello`, and the app re-fetches `/api/home` on it.
-- **WebSocket events built so far (Session 4):** `hello`, `presence`, `settings`, `spicy`, `profile` (name and theme), `knot` (tied or retied), `pair` (she joined).
-  - Still to come: `turn`, `round.drawn`, `round.sealed`, `round.passed`, `hold.start`, `hold.end`, `round.revealed`, `round.verdict`, `tug`.
+- **WebSocket events:**
+  - Pair and settings: `hello` (with `partner_online`, `partner_ready`, `partner_where`), `presence`, `settings`, `spicy`, `profile` (name and theme), `knot` (tied or retied), `pair` (she joined).
+  - Game: `ready`, `where`, `round.drawn`, `round.empty`, `round.reshuffled`, `round.sealed`, `round.hold`, `round.pull`, `round.revealed`, `round.passed`, `round.verdict`, `round.expired`, `tug`.
 - **The hat rule** is shared by the server (`api/app/mix.py`) and the app (`stores/home.ts`):
   - **Normal mode:** exactly the chosen categories.
   - **Random mode:** everything except the excluded categories.
@@ -137,13 +146,20 @@ draw ──► open (both answer / pass) ──► both sealed ──► both ho
   - The hat can't be emptied in either mode.
 - **Theme:** stored on the account (`users.theme`) and cached on the phone. Deep dims the palette on home and game screens only.
 - **Offline partner:** "Leave a sealed question" creates the round and your sealed answer, then sends the partner a push notification. It expires after 24 hours like any other round.
+- **Push notifications (Session 7):**
+  - Opt-in screen (`NotifyView`) shown once after unlocking, plus a toggle in Settings. Signing out removes this phone's subscription.
+  - Server: `GET /api/push/key` (503 `push_off` until VAPID is set), `POST /api/push/subscribe` (https endpoints only, upsert), `POST /api/push/unsubscribe`. Sending uses `pywebpush` in a thread with a 24-hour TTL; endpoints that answer 404/410 are deleted.
+  - **Only when the partner is not in the app** (no live socket): a sealed question left for them, their sealed question answered ("your end of the rope is waiting"), and a tug. Nothing is sent while both are online.
+  - Notification text never contains a question or an answer: just a display name and a fixed line. Tapping opens `/play`.
+  - `public/push-sw.js` is pulled into the generated service worker with `workbox.importScripts`.
 
 ## 7. Question bank
 
 Baron never sees the questions.
 
 - **Packs** are JSON files named by ID, for example `silly-002`. Each question has a **permanent ID**, a `type` (`guess`, `both`, `wyr`, `self`), a `depth` (`light`, `medium`, `deep`), a `category`, and its text (plus options for Would You Rather).
-- **Encryption:** the pack file is encrypted with `BANK_KEY` (AES-GCM; the key is a Railway env var).
+- **Encryption in transit:** packs reach Baron already sealed (`KNOTPACK1` + nonce + AES-GCM ciphertext) with a separate **transport key** in `transport.key`. `import_pack --key-file packs/transport.key` opens them in memory only.
+- **Encryption at rest:** `BANK_KEY` (AES-GCM; a Railway env var), with each question's ID as associated data.
   - The import script reads the file, stores each question's text as its **own encrypted blob**, and prints only counts by category and depth, never any text.
   - The type, depth and category stay readable so the server can filter on them.
 - **Merging:** importing a pack merges into the one shared pool by question ID.
@@ -154,8 +170,9 @@ Baron never sees the questions.
 - **Content guide:**
   - Ghana / West Africa context; no US/UK-only brands or experiences.
   - Questions about the past assume a relationship that started in senior high. "When we were younger" means then, not childhood.
-  - Spicy stays tasteful and only appears under both-on consent.
-  - Starting size is about 1,500 questions across all categories and depths.
+  - Spicy stays tasteful and only appears under both-on consent. It never assumes physical history: attraction, anticipation, firsts, flirting, and what each would like.
+  - Full rules: `docs/QUESTION-GUIDE.md` (rules only, no questions).
+  - **First bank (Session 7):** 1,435 questions in seven `-001` packs, weighted toward Silly, Big and Cozy. The throwaway `test-000` pack is removed with `import_pack --remove test-000`.
 
 ## 8. Data model
 
@@ -182,6 +199,17 @@ Baron never sees the questions.
   - Subject: `Your code: 482913`.
   - Body: just the code and how long it lasts.
 - **Inside the app** everything is Knot, with no DC names. The default palette is Plum, not gold on blue.
+- **Icons and the link-preview card** all come from one file, `web/brand/emblem.png`, via `npm run make:brand`. The emblem is trimmed to its edges first so it fills the space.
+  - **Favicons (32 and 180):** just the emblem, transparent.
+  - **App icons:** an opaque emblem fills the icon edge to edge; a transparent one sits at 86% on deep blue (`--bg` to change it). The iPhone icon has no transparency, and the Android maskable icon keeps the emblem at 70% inside the safe circle.
+- **Landing page install steps** adapt to the browser:
+  - **iOS 26 Safari:** ••• → Share → Add to Home Screen (with "Open as Web App" on). Safari 26 freezes the OS version at 18_6, so detection uses `Version/26`.
+  - **Older iOS:** Share in the toolbar. **iPad:** Share at the top.
+  - **Chrome or Firefox on iOS:** their own Share menu.
+  - **Android:** a real Install button via `beforeinstallprompt`.
+  - **In-app browsers** (Instagram, WhatsApp, Snapchat, Facebook, TikTok…): "Open this in Safari first", with app-specific directions.
+  - **Desktop:** "open it on your phone".
+  - "Just open it here" uses it in the browser tab, without notifications on iPhone.
 
 ## 10. Environment variables
 
@@ -202,6 +230,6 @@ Baron never sees the questions.
 3. The knot: Argon2id, key check, IndexedDB key, eye toggle, retie ✅
 4. Home: shared settings over WebSocket, Random/exclude, Spicy consent, theme picker ✅
 5. Rounds: draw, seal, pass, hold-to-reveal together, verdict, delete; purge job ✅ (plus the import tool and a throwaway test pack)
-6. Landing page, install flow, in-app browser detection, OG card
-7. Push: opt-in screen, tugs, "your turn", sealed-question notifications
-8. Question bank: content guide, generation, encrypted import
+6. Landing page, install flow, in-app browser detection, OG card ✅
+7. Push: opt-in screen, tugs, "your turn", sealed-question notifications ✅
+8. Question bank: content guide, generation, encrypted import ✅ (1,435 questions, delivered sealed)

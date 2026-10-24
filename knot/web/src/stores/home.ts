@@ -37,6 +37,11 @@ export const useHome = defineStore('home', () => {
   const turnUserId = ref<string | null>(null)
   const partnerOnline = ref(false)
   const loaded = ref(false)
+  /** "I'm ready" for the next card (both here). Cleared when a card is dealt. */
+  const readyMe = ref(false)
+  const readyThem = ref(false)
+  /** Which screen they're on: 'play' (at the table), 'home', 'settings'… or '' if unknown/away. */
+  const partnerWhere = ref('')
 
   /** The line under the avatars: what the other person just did. Clears itself. */
   const activity = ref('')
@@ -88,6 +93,8 @@ export const useHome = defineStore('home', () => {
     spicyThem.value = h.spicy_them
     turnUserId.value = h.turn_user_id
     partnerOnline.value = h.partner_online
+    readyMe.value = h.ready_me
+    readyThem.value = h.ready_them
     loaded.value = true
   }
 
@@ -175,11 +182,25 @@ export const useHome = defineStore('home', () => {
 
   function setPresence(online: boolean) {
     partnerOnline.value = online
+    if (!online) {
+      readyThem.value = false
+      partnerWhere.value = ''
+    }
+  }
+
+  function remoteReady(on: boolean) {
+    readyThem.value = on
+    if (on && !readyMe.value) say(`${partner.value} is ready`)
+  }
+
+  function clearReady() {
+    readyMe.value = readyThem.value = false
   }
 
   function reset() {
     settings.value = { ...DEFAULT }
     spicyMe.value = spicyThem.value = partnerOnline.value = loaded.value = false
+    readyMe.value = readyThem.value = false
     turnUserId.value = null
     activity.value = ''
     flash.value = null
@@ -193,6 +214,9 @@ export const useHome = defineStore('home', () => {
     turnUserId,
     myTurn,
     partnerOnline,
+    readyMe,
+    readyThem,
+    partnerWhere,
     loaded,
     activity,
     flash,
@@ -205,6 +229,8 @@ export const useHome = defineStore('home', () => {
     remoteSettings,
     remoteSpicy,
     setPresence,
+    remoteReady,
+    clearReady,
     say,
     reset,
   }

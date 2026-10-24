@@ -13,6 +13,14 @@ target_metadata = Base.metadata
 url = get_settings().database_url
 
 
+# Indexes created in raw SQL that models.py can't express. Autogenerate must never drop them.
+MANUAL_INDEXES = {"one_round_at_a_time"}
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    return not (type_ == "index" and name in MANUAL_INDEXES)
+
+
 def run_migrations_offline() -> None:
     context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
     with context.begin_transaction():
@@ -20,7 +28,12 @@ def run_migrations_offline() -> None:
 
 
 def _run(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        include_object=include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

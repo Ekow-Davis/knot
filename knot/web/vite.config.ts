@@ -1,4 +1,3 @@
-import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -12,7 +11,9 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons/apple-touch-icon.png', 'og.png'],
+      includeAssets: ['icons/apple-touch-icon.png', 'og.png', 'push-sw.js'],
+      // The service worker also runs in `npm run dev`, so notifications can be tried on localhost.
+      devOptions: { enabled: true },
       manifest: {
         // The disguise: what appears under the icon on her home screen.
         name: 'W.W.',
@@ -31,6 +32,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Notification handling lives in public/push-sw.js and is pulled into the generated worker.
+        importScripts: ['push-sw.js'],
         navigateFallback: '/index.html',
         // Never let the service worker answer API or WebSocket requests.
         navigateFallbackDenylist: [/^\/api\//],
@@ -50,7 +53,8 @@ export default defineConfig({
     }),
   ],
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    // '/src' is resolved from the project root by Vite itself (no Node path helpers needed).
+    alias: { '@': '/src' },
   },
   server: {
     // FastAPI runs on :8000 in development; same-origin in production.

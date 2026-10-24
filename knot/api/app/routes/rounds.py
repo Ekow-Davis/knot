@@ -34,6 +34,7 @@ from ..live import hub
 from ..mix import categories_in_play
 from ..models import DrawnQuestion, Pair, Question, Round, SealedAnswer, User
 from ..people import get_pair
+from ..push import notify_later
 
 router = APIRouter(prefix="/rounds", tags=["rounds"])
 tugs_per_user = Limiter(1, 10)  # one tug every 10 seconds is plenty
@@ -134,6 +135,10 @@ def _answerers(rnd: Round, q: Question, pair: Pair) -> set[uuid.UUID]:
     if q.type == "self":
         return {rnd.drawn_by}
     return {u for u in (pair.owner_id, pair.partner_id) if u}
+
+
+def _name(user: User) -> str:
+    return user.display_name or "Your person"
 
 
 def _other(pair: Pair, user_id: uuid.UUID) -> uuid.UUID | None:
@@ -258,6 +263,14 @@ async def draw(user: User = Depends(current_user), db: AsyncSession = Depends(ge
     await db.commit()
     hub.ready.clear()
     await hub.send(partner_id, {"type": "round.drawn", "round_id": str(rnd.id), "by": str(user.id)})
+    # They're away by definition (otherwise this would have been a ready-together draw).
+    notify_later(
+        partner_id,
+        _name(user),
+        "left you a sealed question. It keeps for 24 hours.",
+        tag="round",
+        url="/play",
+    )
     return out
 
 
@@ -321,6 +334,8 @@ async def reshuffle(user: User = Depends(current_user), db: AsyncSession = Depen
     ids = select(Question.id).where(Question.depth == pair.settings["depth"], Question.category.in_(cats))
     n = (await db.execute(delete(DrawnQuestion).where(DrawnQuestion.question_id.in_(ids)))).rowcount
     await db.commit()
+    # Their phone, sitting on "You've drawn every card", moves on too.
+    await hub.send(partner_id, {"type": "round.reshuffled", "by": str(user.id), "count": n})
     return {"shuffled_back": n}
 
 
@@ -355,6 +370,8 @@ async def seal(round_id: uuid.UUID, body: SealIn, user: User = Depends(current_u
     await hub.send(
         partner_id, {"type": "round.sealed", "round_id": str(rnd.id), "by": str(user.id), "ready": rnd.state == "ready"}
     )
+    if rnd.state == "ready" and not hub.online(partner_id):
+        notify_later(partner_id, _name(user), "answered. Your end of the rope is waiting.", tag="round", url="/play")
     return out
 
 
@@ -460,4 +477,6 @@ async def tug(user: User = Depends(current_user), db: AsyncSession = Depends(get
     _, partner_id = await _pair(db, user)
     limit(tugs_per_user, str(user.id))
     await hub.send(partner_id, {"type": "tug", "by": str(user.id)})
+    if not hub.online(partner_id):
+        notify_later(partner_id, _name(user), "gave the rope a little tug.", tag="tug", url="/")
     return {"ok": True}

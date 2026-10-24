@@ -37,13 +37,17 @@ const initial = (name?: string | null) => (name?.trim()[0] ?? '·').toUpperCase(
 
 const presence = computed(() => {
   if (!paired.value) return 'Waiting for your person to join'
-  return home.activity || (home.partnerOnline ? `${P.value} is here, too` : `${P.value} is away right now`)
+  if (home.activity) return home.activity
+  if (!home.partnerOnline) return `${P.value} is away right now`
+  if (home.partnerWhere === 'play') return `${P.value} is still at the table`
+  if (home.partnerWhere === 'settings') return `${P.value} is in Settings`
+  return `${P.value} is here, too`
 })
 
 // ── Turn, or the card already on the table ──
 const r = computed(() => game.round)
 const away = computed(() => paired.value && !home.partnerOnline)
-const canDraw = computed(() => home.myTurn || away.value)
+// Both here → "I'm ready" handshake. Away → you draw and leave it sealed for them.
 const hoursLeft = computed(() => {
   if (!r.value) return ''
   const ms = new Date(r.value.expires_at).getTime() - Date.now()
@@ -61,20 +65,25 @@ const title = computed(() => {
     return away.value ? `Left one for ${P.value}.` : `Waiting on ${P.value}.`
   }
   if (away.value) return `${P.value} isn’t around right now.`
-  return home.myTurn ? 'Your turn to draw.' : `${P.value}’s turn to draw.`
+  if (home.readyMe && home.readyThem) return 'Here it comes.'
+  if (home.readyMe) return `Waiting for ${P.value}.`
+  if (home.readyThem) return `${P.value} is ready.`
+  return 'Ready when you both are.'
 })
 const sub = computed(() => {
   if (!paired.value) return 'Make a pairing code in Settings and give it to the one person who should join you.'
   if (r.value) return 'It waits on the table until you’ve both answered. Nothing is kept after the reveal.'
   if (away.value) return 'Leave them a sealed question. It keeps for 24 hours.'
+  if (home.readyMe) return 'The card appears on both phones the moment they tap ready too.'
   if (home.settings.depth === 'deep') return 'Deep is slower and quieter. Only go here together.'
-  return 'You both see these choices, and changes show up on both phones.'
+  return 'Set the mix together, then both tap ready. The card appears on both phones at once.'
 })
 const drawLabel = computed(() => {
   if (!paired.value) return 'Make a pairing code'
   if (r.value) return 'Open it'
   if (away.value) return 'Leave a sealed question'
-  return home.myTurn ? 'Draw a question' : `Waiting on ${P.value}…`
+  if (home.readyMe) return `Waiting for ${P.value}… (tap to undo)`
+  return home.readyThem ? 'I’m ready too' : 'I’m ready'
 })
 
 // ── What the depths mean ──
@@ -122,7 +131,11 @@ const chips = computed(() =>
 async function draw() {
   if (!paired.value) return router.push({ name: 'settings' })
   if (r.value) return router.push({ name: 'play' })
-  if (!canDraw.value) return
+  if (!away.value) {
+    // Both here: toggle "I'm ready". If that completes the pair, the card is dealt.
+    if (await game.ready(!home.readyMe)) router.push({ name: 'play' })
+    return
+  }
   if (await game.draw()) router.push({ name: 'play' })
 }
 
@@ -257,7 +270,7 @@ useSwipe(deck, { up: draw })
     <button
       class="btn draw"
       type="button"
-      :class="{ waiting: paired && !r && !canDraw }"
+      :class="{ ready: home.readyMe && !away && !r }"
       :disabled="game.busy"
       @click="draw"
     >
@@ -636,6 +649,12 @@ useSwipe(deck, { up: draw })
 /* Draw */
 .draw {
   flex: none;
+}
+.draw.ready {
+  background: transparent;
+  color: var(--ink);
+  border: 1.5px dashed var(--accent);
+  box-shadow: none;
 }
 .draw.waiting {
   opacity: 0.45;

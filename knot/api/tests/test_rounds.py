@@ -215,3 +215,70 @@ async def test_importing_twice_changes_nothing(bank, capsys):
     assert await import_pack(__import__("pathlib").Path(SAMPLE)) == 0
     assert "already imported" in capsys.readouterr().out
     assert await count("SELECT count(*) FROM questions") == 42
+
+
+# ── Both here: "I'm ready" ────────────────────────────────────────────────────
+
+
+async def test_both_ready_deals_one_card_to_both(make_client, outbox, bank, monkeypatch):
+    from app import live
+
+    me, her = await paired(make_client, outbox)
+    await mix(me, "sweet", "deep")
+    monkeypatch.setattr(live.hub, "online", lambda user_id: True)  # pretend both apps are open
+
+    # Drawing alone isn't how it works when you're both here.
+    assert error_code(await me.post("/api/rounds")) == "use_ready"
+
+    r = (await her.post("/api/rounds/ready", json={"ready": True})).json()
+    assert r == {"drawn": False, "empty": False, "round": None, "ready_me": True, "ready_them": False}
+    assert (await me.get("/api/home")).json()["ready_them"] is True
+
+    r = (await me.post("/api/rounds/ready", json={"ready": True})).json()
+    assert r["drawn"] and r["round"]["question"]["type"] == "both"
+    theirs = (await her.get("/api/rounds/current")).json()["round"]
+    assert theirs["id"] == r["round"]["id"]
+    assert (await me.get("/api/home")).json()["ready_me"] is False  # ready resets after a deal
+
+
+async def test_ready_can_be_taken_back(make_client, outbox, bank, monkeypatch):
+    from app import live
+
+    me, her = await paired(make_client, outbox)
+    monkeypatch.setattr(live.hub, "online", lambda user_id: True)
+    await her.post("/api/rounds/ready", json={"ready": True})
+    await her.post("/api/rounds/ready", json={"ready": False})
+    r = (await me.post("/api/rounds/ready", json={"ready": True})).json()
+    assert r["drawn"] is False and r["ready_them"] is False
+
+
+async def test_drawer_alternates_between_deals(make_client, outbox, bank, monkeypatch):
+    from app import live
+
+    me, her = await paired(make_client, outbox)
+    me_id, her_id = await ids(me, her)
+    await mix(me, "silly", "light")
+    monkeypatch.setattr(live.hub, "online", lambda user_id: True)
+
+    drawers = []
+    for _ in range(2):
+        await me.post("/api/rounds/ready", json={"ready": True})
+        rnd = (await her.post("/api/rounds/ready", json={"ready": True})).json()["round"]
+        drawers.append(rnd["drawn_by"])
+        await me.post(f"/api/rounds/{rnd['id']}/pass")
+    assert drawers == [me_id, her_id]
+
+
+async def test_both_ready_on_an_empty_hat(make_client, outbox, bank, monkeypatch):
+    from app import live
+
+    me, her = await paired(make_client, outbox)
+    await mix(me, "cozy", "deep")
+    await me.post("/api/rounds")  # (both offline here) take the only card
+    rid = (await me.get("/api/rounds/current")).json()["round"]["id"]
+    await me.post(f"/api/rounds/{rid}/pass")
+
+    monkeypatch.setattr(live.hub, "online", lambda user_id: True)
+    await me.post("/api/rounds/ready", json={"ready": True})
+    r = (await her.post("/api/rounds/ready", json={"ready": True})).json()
+    assert r["drawn"] is False and r["empty"] is True

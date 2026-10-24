@@ -123,7 +123,18 @@ class PackFile(BaseModel):
         return self
 
 
-def parse_pack(raw: bytes) -> PackFile:
-    """Plain JSON (test packs) or an encrypted .pack file (the real bank)."""
-    data = open_pack(bank_key(), raw) if raw.startswith(MAGIC) else raw
+def parse_pack(raw: bytes, pack_key: bytes | None = None) -> PackFile:
+    """Plain JSON (test packs) or an encrypted .pack file (the real bank).
+    Packs travel sealed with a transport key (pack_key); without one, BANK_KEY is tried."""
+    data = open_pack(pack_key or bank_key(), raw) if raw.startswith(MAGIC) else raw
     return PackFile.model_validate_json(data)
+
+
+def read_key_file(path) -> bytes:
+    """A transport key file: one line of base64 (32 bytes)."""
+    from pathlib import Path
+
+    key = base64.b64decode(Path(path).read_text().strip(), validate=True)
+    if len(key) != 32:
+        raise ValueError("a pack key must be 32 bytes")
+    return key

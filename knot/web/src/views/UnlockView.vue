@@ -10,6 +10,7 @@ import { Eye, EyeOff } from 'lucide-vue-next'
 import BackButton from '@/components/BackButton.vue'
 import KnotTie from '@/components/KnotTie.vue'
 import { ApiError } from '@/lib/api'
+import { shouldAskForPush } from '@/lib/push'
 import { toast } from '@/lib/toast'
 import { useAuth } from '@/stores/auth'
 import { AlreadyTied, PhraseMismatch, useKnot } from '@/stores/knot'
@@ -131,7 +132,7 @@ async function submit() {
   if (changed) toast(`Knot retied. Tell ${partner.value} in person.`)
   else if (first) toast(`Tied. Tell ${partner.value} the phrase in person, not by text.`)
   else toast(`Welcome back, ${auth.me?.display_name ?? 'you'}.`)
-  router.replace({ name: changed ? 'settings' : 'home' })
+  router.replace({ name: changed ? 'settings' : shouldAskForPush() ? 'notify' : 'home' })
 }
 </script>
 

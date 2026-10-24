@@ -36,7 +36,7 @@ const theirs = computed(() => personTint(auth.me?.partner?.theme?.accent_hue ?? 
 
 onMounted(async () => {
   if (!game.loaded) await game.loadCurrent()
-  if (game.phase === 'none' && !after.value) router.replace({ name: 'home' })
+  if (game.phase === 'none') router.replace({ name: 'home' })
 })
 
 // ── The question on the table (live round, or the one just revealed) ──
@@ -53,7 +53,13 @@ const catLine = computed(() => {
   const d = DEPTHS.find((x) => x.id === q.value!.depth)?.label ?? ''
   return `${c} · ${d}`
 })
-const myTurn = computed(() => home.myTurn || !home.partnerOnline)
+// Next card: both here → "ready" handshake; they're away → you draw and leave it sealed.
+const away = computed(() => !home.partnerOnline)
+const nextLabel = computed(() => {
+  if (away.value) return `Leave another for ${P.value}`
+  if (home.readyMe) return `Waiting for ${P.value}… (tap to undo)`
+  return home.readyThem ? `${P.value} is ready. You too?` : 'Ready for the next one'
+})
 
 // ── Answering ──
 const showPass = ref(false)
@@ -183,50 +189,50 @@ const SPARKS = Array.from({ length: 18 }, (_, i) => {
   }
 })
 
-// ── Let it go → next ──
-const after = ref<{ a: string; b: string } | null>(null)
-function letGo() {
-  if (!rv.value) return
-  after.value = {
-    a: q.value?.type === 'self' ? selfText.value : myText.value,
-    b: q.value?.type === 'self' ? '' : theirText.value,
-  }
-  game.letGo()
-}
+// ── Next card, straight from the reveal ──
+// No in-between screen after a reveal: the answers stay up until the next card is dealt.
+// ("between" is only the shared "ready when you both are" moment after a pass, expiry or reshuffle.)
 async function next() {
-  if (!myTurn.value) return
-  after.value = null
-  await game.draw()
+  if (away.value) {
+    game.letGo()
+    await game.draw()
+    return
+  }
+  await game.ready(!home.readyMe)
 }
 async function shuffleAndDraw() {
-  await game.reshuffle()
-  await next()
+  await game.reshuffle() // both here: also counts as "ready", so one tap from them deals
+  if (away.value) await game.draw()
 }
 function enough() {
-  after.value = null
+  if (home.readyMe) game.ready(false)
   game.clearOutcome()
   router.replace({ name: 'tonight' })
 }
 // Nothing on the table and nothing to show (e.g. they passed and you went back): go home.
 watch(
-  () => [game.phase, !!after.value, game.busy] as const,
-  ([phase, hasAfter, busy]) => {
-    if (phase === 'none' && !hasAfter && !busy && game.loaded) router.replace({ name: 'home' })
-  },
-)
-// When a new round arrives (they drew), the "after" moment is over.
-watch(
-  () => game.round?.id,
-  (id) => {
-    if (id) after.value = null
+  () => [game.phase, game.busy] as const,
+  ([phase, busy]) => {
+    if (phase === 'none' && !busy && game.loaded) router.replace({ name: 'home' })
   },
 )
 
+// ── Where the other person is (so nobody waits at the table alone without knowing) ──
+const notice = computed(() => {
+  if (home.activity) return home.activity // e.g. "Ama changed depth to Deep"
+  if (!home.partnerOnline) return `${P.value} is away. Anything you seal waits for them.`
+  const w = home.partnerWhere
+  if (w === 'home') return `${P.value} went back to the home screen.`
+  if (w === 'settings') return `${P.value} is in Settings.`
+  if (w === 'unlock') return `${P.value} is re-entering the phrase.`
+  return ''
+})
+
 // ── Gestures ──
 const revealEl = ref<HTMLElement | null>(null)
-const afterEl = ref<HTMLElement | null>(null)
-useSwipe(revealEl, { up: letGo })
-useSwipe(afterEl, { left: next })
+const betweenEl = ref<HTMLElement | null>(null)
+useSwipe(revealEl, { left: next })
+useSwipe(betweenEl, { left: next })
 
 function close() {
   router.replace({ name: 'home' })
@@ -249,6 +255,9 @@ function close() {
       <button v-if="game.phase === 'answer'" class="pass" type="button" @click="showPass = true">Pass</button>
       <span v-else class="spacer" />
     </header>
+    <Transition name="notice">
+      <p v-if="notice && game.phase !== 'answer'" :key="notice" class="notice" role="status">{{ notice }}</p>
+    </Transition>
 
     <!-- ── Answering ── -->
     <section v-if="game.phase === 'answer' && q" class="answer">
@@ -406,26 +415,27 @@ function close() {
         </template>
       </div>
 
-      <button class="btn letgo" type="button" @click="letGo">Let it go</button>
-      <p class="gesture">or swipe up</p>
-    </section>
-
-    <!-- ── After letting go: next, or enough ── -->
-    <section v-else-if="game.phase === 'none' && after" ref="afterEl" class="after">
-      <div class="dissolving" aria-hidden="true">
-        <p class="gone">{{ after.a }}</p>
-        <p v-if="after.b" class="gone muted later">{{ after.b }}</p>
-      </div>
-      <div class="after-mid">
-        <KnotTie :w="110" mode="tie" :delay="1.6" glow />
-        <p class="after-title">Deleted the moment you both saw it.</p>
-      </div>
-      <div class="after-actions">
-        <button class="btn" type="button" :disabled="!myTurn || game.busy" @click="next">
-          {{ myTurn ? 'Draw the next one' : `${P} is drawing…` }}
+      <div class="reveal-actions">
+        <button class="btn" :class="{ armed: home.readyMe && !away }" type="button" :disabled="game.busy" @click="next">
+          {{ nextLabel }}
         </button>
         <button class="btn ghost" type="button" @click="enough">That's enough for tonight</button>
-        <p v-if="myTurn" class="gesture">or swipe left</p>
+        <p class="gesture">or swipe left for the next one</p>
+      </div>
+    </section>
+
+    <!-- ── Between cards after a pass / expiry / reshuffle: ready together ── -->
+    <section v-else-if="game.phase === 'between'" ref="betweenEl" class="after">
+      <div class="after-mid">
+        <KnotTie :w="110" mode="tie" :delay="0.2" glow />
+        <p class="after-title">Ready when you both are.</p>
+      </div>
+      <div class="after-actions">
+        <button class="btn" :class="{ armed: home.readyMe && !away }" type="button" :disabled="game.busy" @click="next">
+          {{ nextLabel }}
+        </button>
+        <button class="btn ghost" type="button" @click="enough">That's enough for tonight</button>
+        <p class="gesture">or swipe left</p>
       </div>
     </section>
 
@@ -438,9 +448,12 @@ function close() {
         <h2 class="state-title">{{ P }} passed on that one.</h2>
         <p class="state-sub">No reason needed. Your answer was let go, unread.</p>
       </div>
-      <button class="btn" type="button" @click="myTurn ? (game.clearOutcome(), next()) : (game.clearOutcome(), close())">
-        {{ myTurn ? 'Draw another' : 'Back home' }}
-      </button>
+      <div class="stack">
+        <button class="btn" :class="{ armed: home.readyMe && !away }" type="button" @click="(game.toBetween(), next())">
+          {{ nextLabel }}
+        </button>
+        <button class="btn ghost" type="button" @click="(game.clearOutcome(), close())">Back home</button>
+      </div>
     </section>
 
     <!-- ── Hat is empty ── -->
@@ -453,6 +466,7 @@ function close() {
       <div class="stack">
         <button class="btn" type="button" @click="(game.clearOutcome(), close())">Change the mix</button>
         <button class="btn ghost" type="button" @click="shuffleAndDraw">Shuffle them back in</button>
+        <p v-if="!away" class="gesture">Then tap ready together.</p>
       </div>
     </section>
 
@@ -463,9 +477,12 @@ function close() {
         <h2 class="state-title">That one came undone.</h2>
         <p class="state-sub">It sat sealed for 24 hours, so we let it go. Nobody opened it.</p>
       </div>
-      <button class="btn" type="button" @click="(game.clearOutcome(), myTurn ? next() : close())">
-        {{ myTurn ? 'Draw a fresh one' : 'Back home' }}
-      </button>
+      <div class="stack">
+        <button class="btn" :class="{ armed: home.readyMe && !away }" type="button" @click="(game.toBetween(), next())">
+          {{ nextLabel }}
+        </button>
+        <button class="btn ghost" type="button" @click="(game.clearOutcome(), close())">Back home</button>
+      </div>
     </section>
 
     <PassSheet v-if="showPass" :partner="P" @pass="doPass(false)" @retire="doPass(true)" @close="showPass = false" />
@@ -535,6 +552,26 @@ function close() {
 }
 .spacer {
   width: 44px;
+}
+.notice {
+  margin: -4px 0 0;
+  align-self: center;
+  max-width: 100%;
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  font: 500 13px/1.3 var(--sans);
+  text-align: center;
+  flex: none;
+}
+.notice-enter-active,
+.notice-leave-active {
+  transition: opacity 0.3s, transform 0.3s;
+}
+.notice-enter-from,
+.notice-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 
 /* Answering */
@@ -789,6 +826,9 @@ function close() {
 .pair {
   position: relative;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -853,6 +893,8 @@ function close() {
 }
 .selfreveal {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -878,7 +920,7 @@ function close() {
   animation: fadeIn 1s 2s ease both;
 }
 .verdict {
-  min-height: 92px;
+  min-height: 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -924,7 +966,11 @@ function close() {
   color: var(--muted);
   animation: fadeIn 0.5s 1.8s ease both;
 }
-.letgo {
+.reveal-actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   animation: fadeIn 0.6s 1.6s ease both;
 }
 .gesture {
@@ -975,6 +1021,12 @@ function close() {
   margin: 0;
   font: 400 14px/1.5 var(--sans);
   color: var(--muted);
+}
+.btn.armed {
+  background: transparent;
+  color: var(--ink);
+  border: 1.5px dashed var(--accent);
+  box-shadow: none;
 }
 .after-actions {
   width: 100%;

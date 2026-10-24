@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.mix import categories_in_play
-from helpers import HER, OWNER, error_code, paired
+from helpers import OWNER, error_code, paired
 
 # ── The hat ───────────────────────────────────────────────────────────────────
 
@@ -86,11 +86,16 @@ async def test_spicy_needs_both(make_client, outbox):
     assert "spicy" not in (await her.get("/api/home")).json()["in_play"]
 
 
-# ── Live: two phones over WebSockets ──────────────────────────────────────────
+# ── Live updates ──────────────────────────────────────────────────────────────
+# Starlette's test client runs every WebSocket on its own event loop, so a broadcast from one
+# simulated phone to another's socket can't be delivered in a test (it waits forever). So:
+#   1. the hub's routing is tested with stand-in sockets,
+#   2. each change is checked to broadcast the right message (hub calls recorded),
+#   3. a real socket is opened once, alone, to check sign-in on the live connection.
 
 
 def _sign_in_sync(client: TestClient, outbox, email: str, monkeypatch) -> None:
-    """Sign an existing user in on another 'phone' (sync client, for WebSocket tests)."""
+    """Sign an existing user in on another 'phone' (sync client, for the WebSocket test)."""
     from app.config import get_settings
 
     monkeypatch.setattr(get_settings(), "code_resend_seconds", 0)
@@ -103,38 +108,71 @@ async def _make_pair(make_client, outbox):
     await paired(make_client, outbox)
 
 
-def test_live_presence_and_settings(make_client, outbox, monkeypatch):
+class FakeSocket:
+    def __init__(self):
+        self.sent: list[dict] = []
+
+    async def send_json(self, msg):
+        self.sent.append(msg)
+
+
+async def test_hub_routes_to_the_right_people():
+    import uuid
+
+    from app.live import Hub
+
+    hub = Hub()
+    a, b = uuid.uuid4(), uuid.uuid4()
+    a_phone, a_laptop, b_phone = FakeSocket(), FakeSocket(), FakeSocket()
+    hub.add(a, a_phone)
+    hub.add(a, a_laptop)
+    hub.add(b, b_phone)
+    assert hub.online(a) and hub.online(b)
+
+    await hub.send(a, {"type": "x"})
+    assert a_phone.sent == a_laptop.sent == [{"type": "x"}] and b_phone.sent == []
+
+    await hub.to_users([a, b, None], {"type": "y"})
+    assert b_phone.sent == [{"type": "y"}] and len(a_phone.sent) == 2
+
+    hub.remove(a, a_phone)
+    assert hub.online(a)  # still open on the laptop
+    hub.remove(a, a_laptop)
+    assert not hub.online(a)
+
+
+async def test_changes_are_broadcast(make_client, outbox, monkeypatch):
+    from app import live
+
+    me, her = await paired(make_client, outbox)
+    her_id = (await her.get("/api/auth/me")).json()["id"]
+    sent: list[dict] = []
+
+    async def record(message):
+        sent.append(message)
+
+    monkeypatch.setattr(live.hub, "to_pair", record)
+
+    await her.patch("/api/settings", json={"depth": "medium"})
+    assert sent[-1]["type"] == "settings" and sent[-1]["settings"]["depth"] == "medium" and sent[-1]["by"] == her_id
+
+    await her.put("/api/me/spicy", json={"on": True})
+    assert sent[-1] == {"type": "spicy", "user_id": her_id, "on": True}
+
+    await her.patch("/api/me", json={"display_name": "Ama A."})
+    assert sent[-1]["type"] == "profile" and sent[-1]["display_name"] == "Ama A."
+
+
+def test_live_socket_says_hello(make_client, outbox, monkeypatch):
     import asyncio
 
-    # Create the pair with the async helpers, then sign both in on sync clients.
     asyncio.run(_make_pair(make_client, outbox))
-    my_phone, her_phone = TestClient(app), TestClient(app)
-    _sign_in_sync(my_phone, outbox, OWNER, monkeypatch)
-    _sign_in_sync(her_phone, outbox, HER, monkeypatch)
-
-    with my_phone.websocket_connect("/api/ws") as mine:
-        assert mine.receive_json() == {"type": "hello", "partner_online": False}
-
-        with her_phone.websocket_connect("/api/ws") as hers:
-            assert hers.receive_json() == {"type": "hello", "partner_online": True}
-            assert mine.receive_json() == {"type": "presence", "online": True}
-
-            # She changes depth: both phones hear about it.
-            her_phone.patch("/api/settings", json={"depth": "medium"})
-            for ws in (mine, hers):
-                msg = ws.receive_json()
-                assert msg["type"] == "settings" and msg["settings"]["depth"] == "medium"
-
-            # She turns Spicy on.
-            her_phone.put("/api/me/spicy", json={"on": True})
-            assert mine.receive_json()["type"] == "spicy"
-            hers.receive_json()
-
-            hers.send_json({"type": "ping"})
-            assert hers.receive_json() == {"type": "pong"}
-
-        # She closed the app.
-        assert mine.receive_json() == {"type": "presence", "online": False}
+    phone = TestClient(app)
+    _sign_in_sync(phone, outbox, OWNER, monkeypatch)
+    with phone.websocket_connect("/api/ws") as ws:
+        assert ws.receive_json() == {"type": "hello", "partner_online": False, "partner_ready": False, "partner_where": ""}
+        ws.send_json({"type": "ping"})
+        assert ws.receive_json() == {"type": "pong"}
 
 
 def test_live_needs_a_session():

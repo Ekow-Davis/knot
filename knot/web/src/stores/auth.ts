@@ -7,6 +7,7 @@ import { computed, reactive, ref } from 'vue'
 import { api, ApiError } from '@/lib/api'
 import type { Me, VerifyResult } from '@/lib/types'
 import { useKnot } from './knot'
+import { disablePush } from '@/lib/push'
 
 type Status = 'unknown' | 'signed_out' | 'expired' | 'signed_in'
 
@@ -83,6 +84,8 @@ export const useAuth = defineStore('auth', () => {
 
   async function logout() {
     try {
+      // This phone shouldn't keep getting notifications meant for whoever signed out.
+      await disablePush().catch(() => {})
       await api.post('/auth/logout')
     } finally {
       // Signing out also takes the knot key off this phone.

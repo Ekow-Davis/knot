@@ -30,6 +30,9 @@ class Hub:
         self.conns: dict[uuid.UUID, set[WebSocket]] = defaultdict(set)
         # Who has tapped "I'm ready" for the next card. Live-only: leaving the app clears it.
         self.ready: set[uuid.UUID] = set()
+        # Which screen each person is on ("play", "home", "settings"…), so the other phone can say
+        # "Ama went back to the home screen" instead of silently waiting.
+        self.where: dict[uuid.UUID, str] = {}
 
     def online(self, user_id: uuid.UUID | None) -> bool:
         return bool(user_id and self.conns.get(user_id))
@@ -64,10 +67,18 @@ class Hub:
     def reset(self) -> None:
         self.conns.clear()
         self.ready.clear()
+        self.where.clear()
 
 
 hub = Hub()
 router = APIRouter()
+
+SCREENS = {"play", "home", "settings", "unlock", "tonight"}
+
+
+async def _current_partner(user_id: uuid.UUID) -> uuid.UUID | None:
+    async with SessionLocal() as db:
+        return _partner_of(await get_pair(db), user_id)
 
 
 def _partner_of(pair, user_id: uuid.UUID) -> uuid.UUID | None:
@@ -102,6 +113,7 @@ async def live(ws: WebSocket) -> None:
                 "type": "hello",
                 "partner_online": hub.online(partner_id),
                 "partner_ready": bool(partner_id and partner_id in hub.ready),
+                "partner_where": hub.where.get(partner_id, "") if partner_id else "",
             }
         )
         if first_connection:
@@ -112,9 +124,15 @@ async def live(ws: WebSocket) -> None:
                 msg = json.loads(text)
             except ValueError:
                 continue
-            if isinstance(msg, dict) and msg.get("type") == "ping":
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("type") == "ping":
                 await ws.send_json({"type": "pong"})
-            # Anything else from the phone is ignored: changes go through the REST API.
+            elif msg.get("type") == "where" and msg.get("screen") in SCREENS:
+                # Purely informational, so it rides the socket rather than the REST API.
+                hub.where[user.id] = msg["screen"]
+                await hub.send(partner_id or await _current_partner(user.id), {"type": "where", "screen": msg["screen"]})
+            # Anything else from the phone is ignored: real changes go through the REST API.
     except (WebSocketDisconnect, RuntimeError):
         pass
     except Exception:
@@ -123,6 +141,7 @@ async def live(ws: WebSocket) -> None:
         hub.remove(user.id, ws)
         if not hub.online(user.id):
             hub.ready.discard(user.id)  # closed the app: no longer "ready"
+            hub.where.pop(user.id, None)
             # Look the partner up again: they may have joined after this socket opened.
             with contextlib.suppress(Exception):
                 async with SessionLocal() as db:

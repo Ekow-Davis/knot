@@ -49,6 +49,8 @@ export interface HomeOut {
   in_play: Category[]
   turn_user_id: string | null
   partner_online: boolean
+  ready_me: boolean
+  ready_them: boolean
 }
 
 export type QuestionType = 'guess' | 'both' | 'wyr' | 'self'

@@ -9,7 +9,9 @@
 import { ref } from 'vue'
 
 export type LiveMessage =
-  | { type: 'hello'; partner_online: boolean }
+  | { type: 'hello'; partner_online: boolean; partner_ready: boolean; partner_where: string }
+  | { type: 'where'; screen: string }
+  | { type: 'ready'; user_id: string; ready: boolean }
   | { type: 'presence'; online: boolean }
   | { type: 'settings'; settings: import('./types').SharedSettings; by: string }
   | { type: 'spicy'; user_id: string; on: boolean }
@@ -17,7 +19,7 @@ export type LiveMessage =
   | { type: 'knot'; key_version: number; by: string }
   | { type: 'pair'; complete: boolean }
   | { type: 'closed'; code: number }
-  // Game events (round.drawn, round.sealed, round.hold, round.pull, round.revealed,
+  // Game events (round.drawn, round.empty, round.sealed, round.hold, round.pull, round.revealed,
   // round.passed, round.verdict, round.expired) and tugs: handled by stores/round.ts.
   | { type: `round.${string}` | 'tug'; [k: string]: unknown }
 
@@ -63,6 +65,7 @@ function connect() {
   sock.onopen = () => {
     attempt = 0
     liveState.value = 'open'
+    if (lastWhere) sock.send(JSON.stringify({ type: 'where', screen: lastWhere }))
     clearInterval(pingTimer)
     // Keeps proxies (and Railway) from closing an idle connection.
     pingTimer = setInterval(() => sock.readyState === WebSocket.OPEN && sock.send('{"type":"ping"}'), 25_000)
@@ -94,6 +97,14 @@ function connect() {
       retryTimer = setTimeout(connect, delay)
     }
   }
+}
+
+/** Tell the other phone which screen this one is on (informational only). */
+let lastWhere = ''
+export function setWhere(screen: string) {
+  if (screen === lastWhere) return
+  lastWhere = screen
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'where', screen }))
 }
 
 export function startLive() {
