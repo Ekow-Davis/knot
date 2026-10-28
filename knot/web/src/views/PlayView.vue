@@ -374,16 +374,16 @@ function close() {
       <p class="small-q">{{ qText }}</p>
 
       <div v-if="q.type !== 'self'" class="pair">
-        <svg class="rope" width="40" height="420" viewBox="0 0 40 420" fill="none" aria-hidden="true">
-          <path d="M20,0 C2,70 38,140 20,210 S2,350 20,420" pathLength="100" />
-        </svg>
         <div class="slot down">
           <div class="acard" :style="{ background: mine.bg, boxShadow: `inset 0 0 0 1.5px ${mine.ring}, 0 20px 40px -24px var(--glow)` }">
             <span class="alabel" :style="{ color: mine.ink }">{{ labels.mine }}</span>
-            <p class="atext">{{ myText }}</p>
+            <p class="atext" :class="{ long: myText.length > 110 }">{{ myText }}</p>
           </div>
         </div>
         <div class="untie">
+          <svg class="rope" width="40" height="420" viewBox="0 0 40 420" fill="none" aria-hidden="true">
+            <path d="M20,0 C2,70 38,140 20,210 S2,350 20,420" pathLength="100" />
+          </svg>
           <KnotTie :w="90" mode="untie" :stroke-width="11" />
           <template v-if="outcome && 'win' in outcome && outcome.win">
             <span v-for="(s, i) in SPARKS" :key="i" class="spark" :style="s" />
@@ -392,7 +392,7 @@ function close() {
         <div class="slot up">
           <div class="acard" :style="{ background: theirs.bg, boxShadow: `inset 0 0 0 1.5px ${theirs.ring}, 0 20px 40px -24px var(--glow)` }">
             <span class="alabel" :style="{ color: theirs.ink }">{{ labels.theirs }}</span>
-            <p class="atext">{{ theirText }}</p>
+            <p class="atext" :class="{ long: theirText.length > 110 }">{{ theirText }}</p>
           </div>
         </div>
       </div>
@@ -401,7 +401,7 @@ function close() {
         <KnotTie :w="90" mode="untie" :stroke-width="10" />
         <div class="selfcard-out" :style="{ background: `radial-gradient(ellipse at 50% 0%, color-mix(in oklch, ${(writerIsMe ? mine : theirs).ring} 30%, transparent), transparent 75%)` }">
           <span class="label">{{ writerName }}, in their own words</span>
-          <p class="selftext">{{ selfText }}</p>
+          <p class="selftext" :class="{ long: selfText.length > 140 }">{{ selfText }}</p>
         </div>
         <p v-if="writerIsMe" class="read-twice">{{ P }} read it twice. ♡</p>
       </div>
@@ -753,6 +753,11 @@ function close() {
   text-wrap: balance;
   opacity: 0.92;
 }
+.selftext.long {
+  font-size: 22px;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
 .seal {
   flex: none;
 }
@@ -841,8 +846,17 @@ function close() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* Centred with auto margins, not justify-content: when the answers are taller than the
+     screen, justify-content: center pushes the top one above the scroll area where it
+     can't be reached. Auto margins centre short answers and collapse to 0 for long ones. */
   gap: 10px;
+  padding: 2px 0 8px;
+}
+.pair > .slot.down {
+  margin-top: auto;
+}
+.pair > .slot.up {
+  margin-bottom: auto;
 }
 .rope {
   position: absolute;
@@ -850,6 +864,7 @@ function close() {
   top: 50%;
   margin: -210px 0 0 -20px;
   pointer-events: none;
+  z-index: -1;
 }
 .rope path {
   stroke: var(--accent2);
@@ -860,7 +875,9 @@ function close() {
 }
 .slot {
   position: relative;
+  z-index: 1; /* the cards sit over the rope */
   width: 100%;
+  flex: none;
 }
 .slot.down {
   animation: outDown calc(1s * var(--m)) calc(0.75s * var(--m)) cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
@@ -886,8 +903,13 @@ function close() {
   text-wrap: pretty;
   overflow-wrap: anywhere;
 }
+.atext.long {
+  font-size: 20px;
+  line-height: 1.3;
+}
 .untie {
   position: relative;
+  z-index: 0;
   width: 90px;
   height: 54px;
   flex: none;
@@ -903,12 +925,22 @@ function close() {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-width: none;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 24px;
+  padding: 2px 0 8px;
+}
+.selfreveal > :first-child {
+  margin-top: auto;
+}
+.selfreveal > :last-child {
+  margin-bottom: auto;
+}
+.selfreveal > * {
+  flex: none;
 }
 .selfcard-out {
   width: 100%;
